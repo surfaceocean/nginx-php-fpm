@@ -75,18 +75,19 @@ RUN set -eux; \
 
 # PHP 8.5 includes OPcache itself; the conditional above builds it only for 8.4.
 # Resolve the latest stable PECL releases on each uncached daily build.
-# Retry each network operation up to three times after its initial attempt.
+# Retry each network operation up to ten times after its initial attempt.
 RUN set -eux; \
     retry() { \
+        max_retries=10; \
         retries=0; \
         until "$@"; do \
             status=$?; \
-            if [ "$retries" -ge 3 ]; then \
-                echo "Command failed after 3 retries: $*" >&2; \
+            if [ "$retries" -ge "$max_retries" ]; then \
+                echo "Command failed after $max_retries retries: $*" >&2; \
                 return "$status"; \
             fi; \
             retries=$((retries + 1)); \
-            echo "Retry $retries/3 in $((retries * 10)) seconds: $*" >&2; \
+            echo "Retry $retries/$max_retries in $((retries * 10)) seconds: $*" >&2; \
             sleep "$((retries * 10))"; \
         done; \
     }; \

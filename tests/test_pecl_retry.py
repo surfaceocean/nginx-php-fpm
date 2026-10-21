@@ -10,6 +10,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 EXTENSIONS = ("apcu", "imagick", "memcached", "redis", "rdkafka")
+MAX_RETRIES = 10
+RETRY_DELAYS = [str(retry * 10) for retry in range(1, MAX_RETRIES + 1)]
 COMMANDS = ["channel-update pecl.php.net", "config-set preferred_state stable"] + [
     f"install {extension}" for extension in EXTENSIONS
 ]
@@ -98,35 +100,35 @@ fi
         self.assertEqual(logs["SLEEP_CALLS"], [])
         self.assert_enabled(logs)
 
-    def test_channel_update_can_succeed_on_the_third_retry(self):
-        result, logs = self.run_pecl(COMMANDS[0], failures=3)
+    def test_channel_update_can_succeed_on_the_tenth_retry(self):
+        result, logs = self.run_pecl(COMMANDS[0], failures=MAX_RETRIES)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(logs["PECL_CALLS"], [COMMANDS[0]] * 4 + COMMANDS[1:])
-        self.assertEqual(logs["SLEEP_CALLS"], ["10", "20", "30"])
+        self.assertEqual(logs["PECL_CALLS"], [COMMANDS[0]] * (MAX_RETRIES + 1) + COMMANDS[1:])
+        self.assertEqual(logs["SLEEP_CALLS"], RETRY_DELAYS)
         self.assert_enabled(logs)
 
-    def test_channel_update_failure_stops_after_three_retries(self):
+    def test_channel_update_failure_stops_after_ten_retries(self):
         result, logs = self.run_pecl(COMMANDS[0], failures=99)
         self.assertEqual(result.returncode, 42, result.stderr)
-        self.assertEqual(logs["PECL_CALLS"], [COMMANDS[0]] * 4)
-        self.assertEqual(logs["SLEEP_CALLS"], ["10", "20", "30"])
+        self.assertEqual(logs["PECL_CALLS"], [COMMANDS[0]] * (MAX_RETRIES + 1))
+        self.assertEqual(logs["SLEEP_CALLS"], RETRY_DELAYS)
         self.assertEqual(logs["ENABLE_CALLS"], [])
         self.assertEqual(logs["CLEANUP_CALLS"], [])
 
     def test_extension_retries_preserve_previously_installed_extensions(self):
-        result, logs = self.run_pecl("install redis", failures=3)
+        result, logs = self.run_pecl("install redis", failures=MAX_RETRIES)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(
-            logs["PECL_CALLS"], COMMANDS[:5] + ["install redis"] * 4 + COMMANDS[6:]
+            logs["PECL_CALLS"], COMMANDS[:5] + ["install redis"] * (MAX_RETRIES + 1) + COMMANDS[6:]
         )
-        self.assertEqual(logs["SLEEP_CALLS"], ["10", "20", "30"])
+        self.assertEqual(logs["SLEEP_CALLS"], RETRY_DELAYS)
         self.assert_enabled(logs)
 
     def test_extension_failure_stops_before_later_install_and_enable(self):
         result, logs = self.run_pecl("install redis", failures=99)
         self.assertEqual(result.returncode, 42, result.stderr)
-        self.assertEqual(logs["PECL_CALLS"], COMMANDS[:5] + ["install redis"] * 4)
-        self.assertEqual(logs["SLEEP_CALLS"], ["10", "20", "30"])
+        self.assertEqual(logs["PECL_CALLS"], COMMANDS[:5] + ["install redis"] * (MAX_RETRIES + 1))
+        self.assertEqual(logs["SLEEP_CALLS"], RETRY_DELAYS)
         self.assertEqual(logs["ENABLE_CALLS"], [])
         self.assertEqual(logs["CLEANUP_CALLS"], [])
 

@@ -27,7 +27,7 @@ env:
 jobs:
   build:
     name: PHP ${{ matrix.php }} / ${{ matrix.arch }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-26.04-arm' || 'ubuntu-26.04' }}
     timeout-minutes: 120
     permissions:
       contents: read
@@ -42,13 +42,18 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Verify native runner architecture
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          machine_arch=$(uname -m)
+          case "$TARGET_ARCH/$machine_arch" in
+            amd64/x86_64|arm64/aarch64) ;;
+            *) echo "Runner architecture $machine_arch does not match $TARGET_ARCH" >&2; exit 1 ;;
+          esac
+
       - name: Check version manifest validation
         run: python3 -m unittest discover -s tests -p 'test_*.py'
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-        with:
-          platforms: arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -121,7 +126,7 @@ jobs:
     name: Publish manifests and versions.json
     needs: build
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'surfaceocean/nginx-php-fpm'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
       contents: write

@@ -28,7 +28,7 @@ Only PHP 8.4 and PHP 8.5 are supported. Legacy Dockerfiles and build targets hav
 - PHP extensions: `mysqli`, `mysqlnd`, `pdo_mysql`, `pdo_pgsql`, `apcu`, `sysvsem`, `gmp`, `imagick`, `bz2`, `redis`, `rdkafka`, `memcached`, `zip`, `mbstring`, `exif`, `pcntl`, `bcmath`, `gd`, `intl` and OPcache, alongside the extensions provided by the official PHP image.
 - MySQL extensions use the base image's built-in `mysqlnd` driver. OPcache is compiled separately for PHP 8.4 and is built into PHP 8.5.
 - PECL extensions are compiled from current stable releases during a fresh build. Exact installed versions are recorded after building.
-- PECL channel updates and each extension installation get an initial attempt plus up to three retries, with delays of 10, 20 and 30 seconds before the retries.
+- PECL channel updates and each extension installation get an initial attempt plus up to ten retries (11 attempts total), with delays of 10, 20, ... 100 seconds before the retries. Exhausting all attempts fails the build.
 
 ## Automated builds and version inventory
 
@@ -39,7 +39,7 @@ Only PHP 8.4 and PHP 8.5 are supported. Legacy Dockerfiles and build targets hav
 - Manually through **Actions → Build → Run workflow**.
 - On pull requests for validation.
 
-Each PHP version and architecture is built and tested before the release tags are published. If any matrix build job fails, the remaining running or queued matrix jobs are cancelled and release publication is skipped. Scheduled builds refresh the base images and compile extensions without reusing old build layers. Docker Hub publishing uses the existing `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` Actions secrets. The repository's built-in `GITHUB_TOKEN` has `contents: write` only in the publication job so it can commit `versions.json`.
+Each PHP version and architecture is built and tested before the release tags are published. AMD64 jobs run natively on `ubuntu-26.04`; ARM64 jobs run natively on `ubuntu-26.04-arm`. Each job verifies the runner architecture before building, and QEMU is not required. The publication job also runs on `ubuntu-26.04`. If any matrix build job fails, the remaining running or queued matrix jobs are cancelled and release publication is skipped. Scheduled builds refresh the base images and compile extensions without reusing old build layers. Docker Hub publishing uses the existing `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` Actions secrets. The repository's built-in `GITHUB_TOKEN` has `contents: write` only in the publication job so it can commit `versions.json`.
 
 At the end of a successful published build, the workflow generates **[`versions.json`](versions.json) in the repository root** and commits it to `main`. It records actual PHP patch versions, every loaded PHP extension's version, tools, linked libraries and image digests, separately for PHP 8.4/8.5 and each architecture. Values come from the built images. The initial file has no releases until a build has completed. Inventory-only commits do not trigger another build.
 
