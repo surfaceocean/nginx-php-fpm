@@ -9,8 +9,8 @@ case "$php_series" in 8.4|8.5) ;; *) echo 'Only PHP 8.4 and 8.5 are supported' >
 case "$platform" in linux/amd64|linux/arm64) ;; *) echo 'Unsupported platform' >&2; exit 1 ;; esac
 actual_platform=$(docker image inspect "$image" --format '{{.Os}}/{{.Architecture}}')
 [[ "$actual_platform" == "$platform" ]]
-[[ $(docker image inspect "$image" --format '{{.Config.User}}') == www-data ]]
-[[ $(docker run --rm --platform "$platform" --entrypoint id "$image" -u) == 1000 ]]
+[[ $(docker image inspect "$image" --format '{{.Config.User}}') == root ]]
+[[ $(docker run --rm --platform "$platform" --entrypoint id "$image" -u) == 0 ]]
 
 # Exercise the compiled modules without depending on external databases or caches.
 docker run --rm -i --platform "$platform" --entrypoint php "$image" \
@@ -162,8 +162,12 @@ for path in /.env /.hidden.php /.git/x.php; do
   expect_status "$path" 404
 done
 
-docker exec "$container" sh -eu -c '
+docker exec --user www-data "$container" sh -eu -c '
   [ "$(id -u)" = 1000 ]
+  # PID 1 must have dropped privileges; docker exec defaults to the image user.
+  for field in Uid Gid; do
+    grep -Eq "^$field:[[:space:]]+1000[[:space:]]+1000[[:space:]]+1000[[:space:]]+1000[[:space:]]*$" /proc/1/status
+  done
   for path in /etc/supervisor /etc/supervisor/supervisord.conf /etc/nginx \
     /etc/nginx/nginx.conf /etc/nginx/templates /etc/nginx/templates/nginx-site.conf.template \
     /usr/local/etc /usr/local/etc/php /usr/local/etc/php/conf.d \
@@ -269,7 +273,7 @@ grep -F 'process.max = 16' "$test_dir/fpm-config.txt"
 docker exec "$mounted_container" nginx -T > "$test_dir/mounted-nginx.conf" 2>&1
 grep -F 'smoke-mounted-nginx-main' "$test_dir/mounted-nginx.conf"
 grep -F 'smoke-mounted-nginx-site' "$test_dir/mounted-nginx.conf"
-docker exec "$mounted_container" sh -eu -c '
+docker exec --user www-data "$mounted_container" sh -eu -c '
   [ ! -w /etc/nginx/nginx.conf ]
   [ ! -w /etc/nginx/conf.d/nginx-site.conf ]
 '

@@ -142,6 +142,7 @@ RUN mkdir -p /var/log/supervisor /var/log/nginx /var/cache/nginx && \
         /etc/nginx/conf.d \
         /tmp
 
-USER ${USER_NAME}
+# Start as root; the default Supervisord configuration drops to www-data.
+USER root
 EXPOSE 80
 ENTRYPOINT ["entrypoint.sh"]

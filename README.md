@@ -90,7 +90,7 @@ services:
 
 Mounting `./app` replaces the bundled application, so provide your own `index.php`. The default document root is `/var/www/html`; `DOMAIN` defaults to `_`. These two environment variables are used only when `/etc/nginx/conf.d/nginx-site.conf` is absent. On first startup, the entrypoint generates that file from the template at `/etc/nginx/templates/nginx-site.conf.template`. An existing site file is loaded without being rewritten, so a read-only mount is supported. The main Nginx configuration sets `client_max_body_size 256m;`, which the default site inherits.
 
-The container runs as `www-data` with UID/GID `1000:1000` by default. Application files must be readable by that user, and directories your application writes to must be writable by it. Keep this user when adding your own configuration.
+The container starts as `root`, then the default Supervisord configuration switches Supervisord, Nginx and PHP-FPM to `www-data` with UID/GID `1000:1000`. Application files must be readable by `www-data`, and directories your application writes to must be writable by it. Keep this user for application processes when adding your own configuration. Commands started with `docker exec` or `docker compose exec` run as `root` by default; specify `--user www-data` to run them as the application user. A mounted custom Supervisord configuration controls its own user and each program's user.
 
 For Laravel, set `DOCUMENT_ROOT: /var/www/html/public` and mount a custom Nginx site with the static-file and front-controller rules your application needs. The image starts only Nginx and PHP-FPM. To run queue workers, a scheduler or other background services, add their programs to your mounted main Supervisord configuration.
 
@@ -121,7 +121,7 @@ Each file replaces a complete configuration at the corresponding path; start fro
 | PHP-FPM main | `/usr/local/etc/php-fpm.conf` | Mount your replacement directly at this path. The default explicitly includes only `/usr/local/etc/php-fpm.d/www.conf`. |
 | PHP-FPM pool | `/usr/local/etc/php-fpm.d/www.conf` | Mount your replacement directly at this path. The default listens on `127.0.0.1:9000`, matching Nginx. |
 
-Restart the container after editing a mounted configuration. Startup retains an existing Nginx site file across restarts. For a generated site stored only in the container's writable layer, recreate the container to apply new environment values. If the site file is persisted in a volume or mounted from the host, edit that file directly. The `/etc/nginx/conf.d` directory is writable by `www-data` so the initial site can be generated. Startup does not copy or import configuration from the application directory.
+Restart the container after editing a mounted configuration. Startup retains an existing Nginx site file across restarts. For a generated site stored only in the container's writable layer, recreate the container to apply new environment values. If the site file is persisted in a volume or mounted from the host, edit that file directly. The entrypoint generates a missing Nginx site as `root` before Supervisord drops privileges. The `/etc/nginx/conf.d` directory remains writable by `www-data`. Startup does not copy or import configuration from the application directory.
 
 The main PHP-FPM configuration uses a single explicit include, so additional pool files are loaded only if you change that main configuration.
 
