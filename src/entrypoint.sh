@@ -17,7 +17,7 @@ SUPERVISOR_CONF_DIR="/etc/supervisor/conf.d"
 NGINX_CONF_DIR="/etc/nginx/conf.d"
 CUSTOM_NGINX_CONF="/var/www/html/conf/nginx"
 CUSTOM_SUPERVISOR_CONF="/var/www/html/conf/worker/supervisor.conf"
-DOCUMENT_ROOT="/var/www/html/public"
+DOCUMENT_ROOT="${DOCUMENT_ROOT:-/var/www/html}"
 
 # Laravel Supervisor Setup
 setup_laravel_supervisor() {
@@ -124,4 +124,4 @@ setup_nginx_config
 load_custom_supervisor_config
 
 # Start Supervisor
-supervisord -c /etc/supervisor/supervisord.conf
+exec supervisord -c /etc/supervisor/supervisord.conf

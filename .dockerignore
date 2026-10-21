@@ -1,0 +1,9 @@
+.git
+.github
+.history
+__pycache__
+**/__pycache__
+tests
+laravel
+versions.json
+README.md

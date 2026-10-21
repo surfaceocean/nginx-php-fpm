@@ -1,64 +1,203 @@
 name: Build
+
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+    paths-ignore: [versions.json]
+  pull_request:
+    branches: [main]
+    paths-ignore: [versions.json]
+  schedule:
+    # Every day at 03:00 Asia/Shanghai (19:00 UTC the previous day).
+    - cron: '0 19 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize publication and version commits; PR builds have their own group.
+concurrency:
+  group: images-${{ github.repository }}-${{ github.event.pull_request.number || 'main' }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: docker.io/${{ secrets.DOCKERHUB_USERNAME || github.repository_owner }}/nginx-php-fpm
+  PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'surfaceocean/nginx-php-fpm' }}
+
 jobs:
-  docker:
+  build:
+    name: PHP ${{ matrix.php }} / ${{ matrix.arch }}
     runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.4', '8.5']
+        arch: [amd64, arm64]
     steps:
-      - 
-        name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-      - 
-        name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-      - 
-        name: Login to DockerHub
-        uses: docker/login-action@v2
+      - name: Check out sources
+        uses: actions/checkout@v7
         with:
+          persist-credentials: false
+
+      - name: Check version manifest validation
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Docker Hub
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: docker.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      -
-        name: Build and push 8.1
-        uses: docker/build-push-action@v3
+
+      - name: Build current PHP and extension releases
+        uses: docker/build-push-action@v7
         with:
-          file: "./src/docker/Dockerfile"
-          push: true
-          platforms: linux/amd64,linux/arm64
-          build-args: |
-            phpVersion=8.1
-          tags: "${{ vars.BUILDKIT_IMAGE }}:8.1"
-      -
-        name: Build and push 8.2
-        uses: docker/build-push-action@v3
+          context: .
+          file: ./src/docker/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          build-args: phpVersion=${{ matrix.php }}
+          pull: true
+          no-cache: true
+          load: true
+          push: false
+          tags: nginx-php-fpm:test
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Verify extensions, services and HTTP
+        run: bash scripts/test-image.sh nginx-php-fpm:test '${{ matrix.php }}' 'linux/${{ matrix.arch }}'
+
+      - name: Read versions from the built image
+        run: |
+          mkdir -p manifests
+          docker run --rm --platform 'linux/${{ matrix.arch }}' \
+            --entrypoint php nginx-php-fpm:test /usr/local/bin/build-versions.php \
+            > runtime-versions.json
+
+      # Candidate tags are never used as supported release aliases. Publication
+      # below waits for every PHP/architecture combination to pass its tests.
+      - name: Push tested architecture image
+        if: env.PUBLISH == 'true'
+        id: push
+        env:
+          CANDIDATE: ${{ env.IMAGE }}:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.php }}-${{ matrix.arch }}
+        run: |
+          docker tag nginx-php-fpm:test "$CANDIDATE"
+          docker push "$CANDIDATE"
+          reference=$(docker image inspect "$CANDIDATE" --format '{{index .RepoDigests 0}}')
+          echo "digest=${reference##*@}" >> "$GITHUB_OUTPUT"
+
+      - name: Record versions and immutable image digest
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          python3 scripts/update-versions.py --record-manifest runtime-versions.json \
+            --php '${{ matrix.php }}' --platform 'linux/${{ matrix.arch }}' \
+            --image "$IMAGE" --digest "$DIGEST" \
+            --output 'manifests/${{ matrix.php }}-${{ matrix.arch }}.json'
+
+      - name: Upload architecture manifest
+        uses: actions/upload-artifact@v7
         with:
-          file: "./src/docker/Dockerfile"
-          push: true
-          platforms: linux/amd64,linux/arm64
-          build-args: |
-            phpVersion=8.2
-          tags: "${{vars.BUILDKIT_IMAGE}}:8.2"
-      -
-        name: Build and push 8.3
-        uses: docker/build-push-action@v3
+          name: versions-${{ matrix.php }}-${{ matrix.arch }}
+          path: manifests/*.json
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish manifests and versions.json
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'surfaceocean/nginx-php-fpm'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v7
+
+      - name: Download architecture manifests
+        uses: actions/download-artifact@v8
         with:
-          file: "./src/docker/Dockerfile"
-          push: true
-          platforms: linux/amd64,linux/arm64
-          build-args: |
-            phpVersion=8.3
-          tags: |
-           "${{vars.BUILDKIT_IMAGE}}:8.3"
-      -
-        name: Build and push 8.4
-        uses: docker/build-push-action@v3
+          pattern: versions-*
+          path: manifests
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Docker Hub
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@v4
         with:
-          file: "./src/docker/Dockerfile"
-          push: true
-          platforms: linux/amd64,linux/arm64
-          build-args: |
-            phpVersion=8.4
-          tags: |
-           "${{vars.BUILDKIT_IMAGE}}:8.4"
-           "${{vars.BUILDKIT_IMAGE}}:latest"
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Check whether this is still the current source
+        id: source
+        if: env.PUBLISH == 'true'
+        run: |
+          git fetch origin main
+          if git diff --quiet "$GITHUB_SHA" origin/main -- . ':!versions.json'; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'current=false' >> "$GITHUB_OUTPUT"
+            echo 'New source changes are on main; this run will not replace release tags or versions.json.'
+          fi
+
+      - name: Assemble release images and root versions.json
+        env:
+          CURRENT_SOURCE: ${{ steps.source.outputs.current }}
+        run: |
+          args=()
+          if [[ "$PUBLISH" == true && "$CURRENT_SOURCE" == true ]]; then
+            args+=(--publish)
+          fi
+          python3 scripts/update-versions.py --records manifests --image "$IMAGE" \
+            --source-sha "$GITHUB_SHA" --source-repository "$GITHUB_REPOSITORY" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --output versions.json "${args[@]}"
+
+      - name: Upload root versions.json
+        uses: actions/upload-artifact@v7
+        with:
+          name: versions
+          path: versions.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Commit versions.json to main
+        if: env.PUBLISH == 'true' && steps.source.outputs.current == 'true'
+        run: |
+          cp versions.json "$RUNNER_TEMP/versions.json"
+          git fetch origin main
+          if ! git diff --quiet "$GITHUB_SHA" origin/main -- . ':!versions.json'; then
+            echo 'Source changed during publication; leave the manifest as an artifact for this run.'
+            exit 0
+          fi
+          git restore -- versions.json
+          git switch --detach origin/main
+          cp "$RUNNER_TEMP/versions.json" versions.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add versions.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'chore: record built component versions [skip ci]'
+          # A concurrent main update causes a safe, non-forced rejection.
+          git push origin HEAD:main

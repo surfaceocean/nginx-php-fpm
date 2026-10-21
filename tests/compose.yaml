@@ -1,4 +1,3 @@
-version: '3'
 services:
     mysql:
       image: mysql:8.0
@@ -12,12 +11,13 @@ services:
       ports:
        - 3306:3306
     nginx-php-fpm:
-        image: jkaninda/nginx-php-fpm:latest
+        image: docker.io/surfaceocean/nginx-php-fpm:8.5
         container_name: nginx-php-fpm
         restart: unless-stopped
         depends_on:
          - mysql
         environment:
+          DOCUMENT_ROOT: /var/www/html/public
           DB_HOST: mysql
           DB_PORT: 3306
           DB_DATABASE: php

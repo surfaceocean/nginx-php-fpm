@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "image": "docker.io/surfaceocean/nginx-php-fpm",
+  "generated_at": null,
+  "source": null,
+  "releases": {}
+}

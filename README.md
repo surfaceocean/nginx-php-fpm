@@ -1,240 +1,123 @@
-### 🐳 **Docker Image: Nginx PHP-FPM**  
+# Nginx + PHP-FPM
 
-A **ready-to-use container** designed for running PHP-based applications, including Laravel microservices. This Docker image combines **Nginx** and **PHP-FPM**, offering a robust foundation for your projects with built-in support for essential extensions and configurations.  
+Nginx and PHP-FPM in one container, maintained by [surfaceocean](https://github.com/surfaceocean/nginx-php-fpm), based on [jkaninda/nginx-php-fpm](https://github.com/jkaninda/nginx-php-fpm).
 
-[![Build](https://github.com/jkaninda/nginx-php-fpm/actions/workflows/build.yml/badge.svg)](https://github.com/jkaninda/nginx-php-fpm/actions/workflows/build.yml)
-[![Tests](https://github.com/jkaninda/nginx-php-fpm/actions/workflows/tests.yml/badge.svg)](https://github.com/jkaninda/nginx-php-fpm/actions/workflows/tests.yml)
-![Docker Image Size (latest by date)](https://img.shields.io/docker/image-size/jkaninda/nginx-php-fpm?style=flat-square)
-![Docker Pulls](https://img.shields.io/docker/pulls/jkaninda/nginx-php-fpm?style=flat-square)
+[![Build](https://github.com/surfaceocean/nginx-php-fpm/actions/workflows/build.yml/badge.svg)](https://github.com/surfaceocean/nginx-php-fpm/actions/workflows/build.yml)
 
+## **Links**
 
-#### **Features**  
-- **PHP Application Support**: Optimized to run Laravel or any PHP-based applications.  
-- **Integrated Extensions**:  
-  - **Database**: MySQL and PostgreSQL.  
-  - **Caching**: Redis and Memcached.  
-  - **Messaging**: Kafka for event-driven architecture.  
-  - **Task Scheduling**: Laravel Scheduler and Cron jobs support.  
-- **Custom Configuration**: Pre-configured with sensible defaults, allowing seamless customization.  
-- **Event Handling**: Support for advanced event-driven processes.  
-- **Optimized for Microservices**: Built with modern PHP microservices in mind.  
+- [Docker Hub](https://hub.docker.com/r/surfaceocean/nginx-php-fpm)
+- [GitHub Repository](https://github.com/surfaceocean/nginx-php-fpm)
 
-This image is ideal for developers looking for a streamlined, high-performance solution to deploy PHP applications with essential tools already integrated.
+## Images
 
----
-## **Links**  
-- [Docker Hub](https://hub.docker.com/r/jkaninda/nginx-php-fpm)  
-- [GitHub Repository](https://github.com/jkaninda/nginx-php-fpm)  
+Images are published to Docker Hub at **`docker.io/<DOCKERHUB_USERNAME>/nginx-php-fpm`** for `linux/amd64` and `linux/arm64`. The workflow uses the account named in the `DOCKERHUB_USERNAME` Actions secret. Examples below use `docker.io/surfaceocean/nginx-php-fpm`; replace `surfaceocean` if your Docker Hub username differs.
 
-## **Supported PHP Versions**  
-- 8.4  
-- 8.3  
-- 8.2  
-- 8.1  
-- 8.0  
-- 7.4  
-- 7.2  
+| Tag | PHP series |
+| --- | --- |
+| `8.4` | Latest stable PHP 8.4 patch available in the official PHP base image |
+| `8.5` | Latest stable PHP 8.5 patch available in the official PHP base image |
+| `latest` | Same image as `8.5` |
 
-## **Specifications**  
-This Docker image comes pre-installed with the following:  
-- **PHP Extensions**:  
-  - Composer  
-  - OpenSSL  
-  - XML  
-  - PDO  
-  - Rdkafka  
-  - Redis  
-  - Mbstring  
-  - PCNTL  
-  - ZIP  
-  - GD  
-  - BCMath  
-  - Memcached  
+Only PHP 8.4 and PHP 8.5 are supported. Legacy Dockerfiles and build targets have been removed.
 
-- **Additional Features**:  
-  - Laravel Cron Jobs & Scheduler  
-  - Supervisord  
-  - Node.js & NPM  
+## Included software
 
-## **Basic Usage with Docker Compose**
+- Nginx, PHP-FPM, ImageMagick, Supervisord, Cron and Composer.
+- Node.js 24 LTS and npm.
+- PHP extensions: `mysqli`, `mysqlnd`, `pdo_mysql`, `pdo_pgsql`, `apcu`, `sysvsem`, `gmp`, `imagick`, `bz2`, `redis`, `rdkafka`, `memcached`, `zip`, `mbstring`, `exif`, `pcntl`, `bcmath`, `gd`, `intl` and OPcache, alongside the extensions provided by the official PHP image.
+- MySQL extensions use the base image's built-in `mysqlnd` driver. OPcache is compiled separately for PHP 8.4 and is built into PHP 8.5.
+- PECL extensions are compiled from current stable releases during a fresh build. Exact installed versions are recorded after building.
 
-### **Example `docker-compose.yml`**
+## Automated builds and version inventory
+
+[Build workflow](.github/workflows/build.yml) runs:
+
+- Daily at **19:00 UTC**.
+- On pushes to `main` that change build inputs.
+- Manually through **Actions → Build → Run workflow**.
+- On pull requests for validation.
+
+Each PHP version and architecture is built and tested before the release tags are published. Scheduled builds refresh the base images and compile extensions without reusing old build layers. Docker Hub publishing uses the existing `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` Actions secrets. The repository's built-in `GITHUB_TOKEN` has `contents: write` only in the publication job so it can commit `versions.json`.
+
+At the end of a successful published build, the workflow generates **[`versions.json`](versions.json) in the repository root** and commits it to `main`. It records actual PHP patch versions, every loaded PHP extension's version, tools, linked libraries and image digests, separately for PHP 8.4/8.5 and each architecture. Values come from the built images. The initial file has no releases until a build has completed. Inventory-only commits do not trigger another build.
+
+The inventory script is also installed in each image:
+
+```sh
+docker run --rm --entrypoint php docker.io/surfaceocean/nginx-php-fpm:8.5 \
+  /usr/local/bin/build-versions.php
+```
+
+Enable GitHub Actions in the repository's **Actions** tab and configure these repository Actions secrets if they are not already present:
+
+- `DOCKERHUB_USERNAME`: the Docker Hub account that owns the `nginx-php-fpm` repository.
+- `DOCKERHUB_TOKEN`: a Docker Hub access token with permission to push to that repository.
+
+Push these changes to `main` and run **Build** once if needed. Repository policies must allow the bot's `versions.json` commit. If `main` requires pull requests for every change, configure an appropriate bypass for the publishing bot.
+
+## Docker Compose
+
 ```yaml
 services:
   app:
-    image: jkaninda/nginx-php-fpm:8.3
-    container_name: app
-    restart: unless-stopped
-    user: www-data # Optional for production
-    volumes:
-      # Project root
-      - ./src:/var/www/html
-    ports:
-      - "80:80"
-    networks:
-      - default
-```
-
-### **Commands**  
-
-#### Start the service:
-```sh
-docker compose up -d
-```
-
-#### Create a new Laravel project:
-```sh
-docker compose exec app composer create-project --prefer-dist laravel/laravel .
-```
-
-#### Generate application key:
-```sh
-docker compose exec app php artisan key:generate
-```
-
-#### Create a storage symlink:
-```sh
-docker compose exec app php artisan storage:link
-```
-
-#### Fix storage and cache permissions:
-```sh
-docker compose exec app chmod -R 777 storage bootstrap/cache
-```
-
-#### Run Laravel migrations:
-```sh
-docker compose exec app php artisan migrate
-```
-
-#### Access the container shell:
-```sh
-docker exec -it app bash
-```
-
----
-
-## **Advanced Nginx PHP-FPM Setup**
-
-### **Extended `docker-compose.yml` Example**
-```yaml
-version: '3'
-services:
-  app:
-    image: jkaninda/nginx-php-fpm
-    container_name: app
+    image: docker.io/surfaceocean/nginx-php-fpm:8.5
     restart: unless-stopped
     ports:
       - "80:80"
     volumes:
-      # Project root
-      - ./:/var/www/html
-      - ~/.ssh:/root/.ssh # Use private CVS if needed
-      # Optional custom PHP config
-      # - ./php.ini:/usr/local/etc/php/conf.d/php.ini
+      - ./app:/var/www/html
     environment:
-      - APP_ENV=development # or production
-      - LARAVEL_PROCS_NUMBER=2 # Optional: Queue worker processes
-      # - CLIENT_MAX_BODY_SIZE=20M # Optional
-      # - DOMAIN=example.com # Optional
-      - DOCUMENT_ROOT=/var/www/html # Optional
+      DOCUMENT_ROOT: /var/www/html
+      DOMAIN: _
+      CLIENT_MAX_BODY_SIZE: 20M
 ```
 
-### **Default Web Root**  
+For Laravel, set `DOCUMENT_ROOT: /var/www/html/public`. When `/var/www/html/artisan` exists, the entrypoint creates supervisor processes for Laravel's queue worker and scheduler. `LARAVEL_PROCS_NUMBER` controls the number of queue workers (default: `1`).
+
+The default document root is `/var/www/html`. Custom configurations can be mounted at:
+
+- `/var/www/html/conf/nginx/nginx.conf`
+- `/var/www/html/conf/nginx/nginx-site.conf`
+- `/var/www/html/conf/worker/supervisor.conf`
+
+Use `docker compose exec app bash` to open a shell, or `docker compose exec app php artisan migrate` to run migrations in an existing Laravel application.
+
+## Local builds
+
+Docker and Python 3.9+ are required; `make` is optional. Run from the repository root:
+
+```sh
+bash ./build.sh 8.4
+bash ./build.sh 8.5
+# Defaults to PHP 8.5; "latest" is also accepted.
+bash ./build.sh
+# Build both supported versions in order.
+make build
 ```
-/var/www/html
+
+The script builds for the local Docker platform and updates the corresponding entry in the root `versions.json`. A local build has no published registry digest. `IMAGE_NAME` overrides the default image name and `PYTHON` can select a Python executable:
+
+```sh
+IMAGE_NAME=local/nginx-php-fpm bash ./build.sh 8.5
 ```
 
----
+For a direct Docker build:
 
-## **Custom Build Example**
+```sh
+docker build --pull --build-arg phpVersion=8.5 \
+  -f src/docker/Dockerfile -t docker.io/surfaceocean/nginx-php-fpm:8.5 .
+```
 
-### **Dockerfile**
-```Dockerfile
-FROM jkaninda/nginx-php-fpm:8.3
-# Copy Laravel project files
-COPY . /var/www/html
-# Storage Volume
-VOLUME /var/www/html/storage
+Use `build.sh` to also update the repository inventory. Both build entry points reject unsupported PHP series.
 
+## Extending the image
+
+```dockerfile
+FROM docker.io/surfaceocean/nginx-php-fpm:8.5
+COPY --chown=www-data:www-data . /var/www/html
+ENV DOCUMENT_ROOT=/var/www/html/public
 WORKDIR /var/www/html
-
-# Fix permissions
-RUN chown -R www-data:www-data /var/www/html
-
-USER www-data
 ```
 
----
-
-## **Custom Nginx Configuration**
-
-To enable custom Nginx configurations, use the following files:  
-- `/var/www/html/conf/nginx/nginx.conf`  
-- `/var/www/html/conf/nginx/nginx-site.conf`  
-
----
-
-## **Supervisord Integration**
-
-Supervisord can be used to manage tasks or processes within the container.  
-
-### **Example Configuration for Kafka Consumer**
-```conf
-[program:kafkaconsume-worker]
-process_name=%(program_name)s_%(process_num)02d
-command=php /var/www/html/artisan kafka:consumer
-autostart=true
-autorestart=true
-numprocs=1
-user=www-data
-redirect_stderr=true
-stdout_logfile=/var/www/html/storage/logs/kafka.log
-```
-
----
-
-## **Fixing Storage Permissions**  
-
-If you encounter storage permission issues, run the following commands:  
-
-```sh
-docker compose exec php-fpm /bin/bash
-```
-
-Then inside the container:  
-```sh
-chown -R www-data:www-data /var/www/html/
-chmod -R 775 /var/www/html/storage
-```
-
----
-
-### Explore Another Project: Goma Gateway
-
-Are you building a microservices architecture?
-Do you need a powerful yet lightweight API Gateway or a high-performance reverse proxy to secure and manage your services effortlessly?
-
-Check out my other project — **[Goma Gateway](https://github.com/jkaninda/goma-gateway)**.
-
-**Goma Gateway** is a high-performance, declarative API Gateway built for modern microservices. It comes with a rich set of built-in middleware, including:
-
-* Basic, JWT, OAuth2, LDAP, and ForwardAuth authentication
-* Caching and rate limiting
-* Bot detection
-* Built-in load balancing
-* Simple configuration with minimal overhead
-* ...and more!
-
-**Protocol support:** REST, GraphQL, gRPC, TCP, and UDP
-
-**Security:** Automatic HTTPS via Let’s Encrypt or use your own TLS certificates
-
-Whether you're managing internal APIs or exposing public endpoints, **Goma Gateway** helps you do it efficiently, securely, and with minimal complexity.
-
----
-
-## ⭐️ **Support the Project**  
-If this project helped you, do not skip on giving it a star. Thanks!
-
-
+The original MIT license and copyright are retained in [LICENSE](LICENSE).

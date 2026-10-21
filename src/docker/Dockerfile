@@ -1,123 +1,131 @@
-ARG phpVersion=8.3-dev
-FROM php:${phpVersion}-fpm
+ARG phpVersion=8.5
+FROM php:${phpVersion}-fpm-trixie
+
+ARG phpVersion
 ARG WORKDIR=/var/www/html
-ENV DOCUMENT_ROOT=${WORKDIR}
-ENV LARAVEL_PROCS_NUMBER=1
-ENV DOMAIN=_
-ENV CLIENT_MAX_BODY_SIZE=15M
-ENV NODE_VERSION=20.x
+ARG NODE_VERSION=24.x
 ARG GROUP_ID=1000
 ARG USER_ID=1000
-ENV USER_NAME=www-data
 ARG GROUP_NAME=www-data
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    libfreetype6-dev \
-    libjpeg62-turbo-dev \
-    libmemcached-dev \
-    libzip-dev \
-    libpng-dev \
-    libonig-dev \
-    libxml2-dev \
-    librdkafka-dev \
-    libpq-dev \
-    openssh-server \
-    zip \
-    unzip \
-    supervisor \
-    sqlite3  \
-    nano \
-    cron
 
-RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION} | bash -
- # Install Node    
-RUN apt-get install -y nodejs     
-# Install nginx 
-RUN apt-get update && apt-get install -y nginx
+ENV DOCUMENT_ROOT=${WORKDIR} \
+    LARAVEL_PROCS_NUMBER=1 \
+    DOMAIN=_ \
+    CLIENT_MAX_BODY_SIZE=15M \
+    NODE_VERSION=${NODE_VERSION} \
+    USER_NAME=www-data
 
-# Clear cache
-RUN apt-get clean && rm -rf /var/lib/apt/lists/*
-# Install Kafka 
-RUN git clone https://github.com/arnaud-lb/php-rdkafka.git\
-    && cd php-rdkafka \
-    && phpize \
-    && ./configure \
-    && make all -j 5 \
-    && make install 
+# Only the maintained PHP release lines are supported by this Dockerfile.
+RUN case "$phpVersion" in \
+        8.4|8.5) ;; \
+        *) echo "Unsupported PHP version: $phpVersion (use 8.4 or 8.5)" >&2; exit 1 ;; \
+    esac
 
-# Install Rdkafka and enable it
-RUN docker-php-ext-enable rdkafka \
-     && cd .. \
-    && rm -rf /php-rdkafka
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        cron \
+        curl \
+        git \
+        imagemagick \
+        libbz2-dev \
+        libfreetype6-dev \
+        libgmp-dev \
+        libicu-dev \
+        libjpeg62-turbo-dev \
+        libmagickwand-dev \
+        libmemcached-dev \
+        libonig-dev \
+        libpng-dev \
+        libpq-dev \
+        librdkafka-dev \
+        libsasl2-dev \
+        libxml2-dev \
+        libzip-dev \
+        nano \
+        nginx \
+        openssh-server \
+        sqlite3 \
+        supervisor \
+        unzip \
+        zip \
+        zlib1g-dev; \
+    curl -fsSL "https://deb.nodesource.com/setup_${NODE_VERSION}" -o /tmp/nodesource_setup.sh; \
+    bash /tmp/nodesource_setup.sh; \
+    apt-get install -y --no-install-recommends nodejs; \
+    rm -f /tmp/nodesource_setup.sh; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
 
-# Install PHP extensions zip, mbstring, exif, bcmath, intl
-RUN docker-php-ext-configure gd --with-freetype --with-jpeg
-RUN docker-php-ext-install  zip mbstring exif pcntl bcmath -j$(nproc) gd intl
+# mysqlnd and mbstring are already compiled into the official PHP base image.
+# Build both MySQL APIs against mysqlnd instead of a separate client library.
+RUN set -eux; \
+    php -r 'exit(extension_loaded("mysqlnd") ? 0 : 1);'; \
+    docker-php-ext-configure gd --with-freetype --with-jpeg; \
+    docker-php-ext-configure mysqli --with-mysqli=mysqlnd; \
+    docker-php-ext-configure pdo_mysql --with-pdo-mysql=mysqlnd; \
+    extensions="bcmath bz2 exif gd gmp intl mysqli pcntl pdo_mysql pdo_pgsql sysvsem zip"; \
+    if ! php -r 'exit(extension_loaded("mbstring") ? 0 : 1);'; then \
+        extensions="$extensions mbstring"; \
+    fi; \
+    if ! php -r 'exit(extension_loaded("Zend OPcache") ? 0 : 1);'; then \
+        extensions="$extensions opcache"; \
+    fi; \
+    docker-php-ext-install -j"$(nproc)" $extensions
 
-# Install Redis and enable it
-RUN pecl install redis  && docker-php-ext-enable redis
+# PHP 8.5 includes OPcache itself; the conditional above builds it only for 8.4.
+# Resolve the latest stable PECL releases on each uncached daily build.
+RUN set -eux; \
+    pecl channel-update pecl.php.net; \
+    pecl config-set preferred_state stable; \
+    pecl install apcu imagick memcached redis rdkafka </dev/null; \
+    docker-php-ext-enable apcu imagick memcached redis rdkafka; \
+    rm -rf /tmp/pear
 
+COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+COPY src/build-versions.php /usr/local/bin/build-versions.php
 
+# Fail the build if any required module is missing or a tool cannot run.
+RUN php /usr/local/bin/build-versions.php >/usr/local/share/build-versions.json
 
-# Install the php memcached extension
-RUN pecl install memcached && docker-php-ext-enable memcached
+WORKDIR ${WORKDIR}
 
-# Install the PHP pdo_mysql extention
-RUN docker-php-ext-install pdo_mysql
+RUN rm -rf /var/www/* && mkdir -p /var/www/html
 
-# Install the PHP pdo_pgsql extention
-RUN docker-php-ext-install pdo_pgsql
-
-# Install PHP Opcache extention
-RUN docker-php-ext-install opcache
-
-# Install Composer
-RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-
-# Set working directory
-WORKDIR $WORKDIR
-
-RUN rm -Rf /var/www/* && \
-mkdir -p /var/www/html
-
-ADD src/index.php $WORKDIR/index.php
-ADD src/php.ini $PHP_INI_DIR/conf.d/
-ADD src/opcache.ini $PHP_INI_DIR/conf.d/
-ADD src/supervisor/supervisord.conf /etc/supervisor/supervisord.conf
+COPY src/index.php ${WORKDIR}/index.php
+COPY src/php.ini ${PHP_INI_DIR}/conf.d/
+COPY src/opcache.ini ${PHP_INI_DIR}/conf.d/
+COPY src/supervisor/supervisord.conf /etc/supervisor/supervisord.conf
 
 COPY src/entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh && \
- ln -s /usr/local/bin/entrypoint.sh /
+    ln -s /usr/local/bin/entrypoint.sh /
 
-RUN rm -rf /etc/nginx/conf.d/default.conf && \
-rm -rf /etc/nginx/sites-enabled/default && \
- rm -rf /etc/nginx/sites-available/default && \
-    rm -rf /etc/nginx/nginx.conf
+RUN rm -f /etc/nginx/conf.d/default.conf \
+        /etc/nginx/sites-enabled/default \
+        /etc/nginx/sites-available/default \
+        /etc/nginx/nginx.conf
 
 COPY src/nginx.conf /etc/nginx/nginx.conf
 COPY src/default.conf /etc/nginx/conf.d/
 
 RUN usermod -u ${USER_ID} ${USER_NAME} && \
- groupmod -g ${USER_ID} ${GROUP_NAME}
+    groupmod -g ${GROUP_ID} ${GROUP_NAME}
 
-RUN mkdir -p /var/log/supervisor /var/log/nginx /var/cache/nginx
+RUN mkdir -p /var/log/supervisor /var/log/nginx /var/cache/nginx && \
+    touch /var/run/nginx.pid && \
+    chown -R ${USER_NAME}:${GROUP_NAME} \
+        /var/www \
+        /var/log \
+        /etc/supervisor/conf.d \
+        ${PHP_INI_DIR}/conf.d \
+        /var/cache/nginx \
+        /var/lib/nginx \
+        /etc/nginx/nginx.conf \
+        /var/run/nginx.pid \
+        /etc/nginx/conf.d \
+        /tmp
 
-RUN chown -R ${USER_NAME}:${GROUP_NAME} /var/www && \
-  chown -R ${USER_NAME}:${GROUP_NAME} /var/log/ && \
-  chown -R ${USER_NAME}:${GROUP_NAME} /etc/supervisor/conf.d/ && \
-  chown -R ${USER_NAME}:${GROUP_NAME} $PHP_INI_DIR/conf.d/ && \
-  touch /var/run/nginx.pid && \
-  chown -R $USER_NAME:$USER_NAME /var/cache/nginx && \
-  chown -R $USER_NAME:$USER_NAME /var/lib/nginx/ && \
-  chown -R $USER_NAME:$USER_NAME /etc/nginx/nginx.conf && \
-  chown -R $USER_NAME:$USER_NAME /var/run/nginx.pid && \
-  chown -R $USER_NAME:$USER_NAME /var/log/supervisor && \
-  chown -R $USER_NAME:$USER_NAME /etc/nginx/conf.d/ && \
-  chown -R ${USER_NAME}:${GROUP_NAME} /tmp
-
-
-#USER ${USER_NAME}
 EXPOSE 80
 ENTRYPOINT ["entrypoint.sh"]
