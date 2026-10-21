@@ -9,9 +9,7 @@ ARG USER_ID=1000
 ARG GROUP_NAME=www-data
 
 ENV DOCUMENT_ROOT=${WORKDIR} \
-    LARAVEL_PROCS_NUMBER=1 \
     DOMAIN=_ \
-    CLIENT_MAX_BODY_SIZE=15M \
     NODE_VERSION=${NODE_VERSION} \
     USER_NAME=www-data
 
@@ -27,6 +25,7 @@ RUN set -eux; \
         ca-certificates \
         cron \
         curl \
+        gettext-base \
         git \
         imagemagick \
         libbz2-dev \
@@ -76,10 +75,26 @@ RUN set -eux; \
 
 # PHP 8.5 includes OPcache itself; the conditional above builds it only for 8.4.
 # Resolve the latest stable PECL releases on each uncached daily build.
+# Retry each network operation up to three times after its initial attempt.
 RUN set -eux; \
-    pecl channel-update pecl.php.net; \
+    retry() { \
+        retries=0; \
+        until "$@"; do \
+            status=$?; \
+            if [ "$retries" -ge 3 ]; then \
+                echo "Command failed after 3 retries: $*" >&2; \
+                return "$status"; \
+            fi; \
+            retries=$((retries + 1)); \
+            echo "Retry $retries/3 in $((retries * 10)) seconds: $*" >&2; \
+            sleep "$((retries * 10))"; \
+        done; \
+    }; \
+    retry pecl channel-update pecl.php.net; \
     pecl config-set preferred_state stable; \
-    pecl install apcu imagick memcached redis rdkafka </dev/null; \
+    for extension in apcu imagick memcached redis rdkafka; do \
+        retry pecl install "$extension" </dev/null; \
+    done; \
     docker-php-ext-enable apcu imagick memcached redis rdkafka; \
     rm -rf /tmp/pear
 
@@ -96,6 +111,8 @@ RUN rm -rf /var/www/* && mkdir -p /var/www/html
 COPY src/index.php ${WORKDIR}/index.php
 COPY src/php.ini ${PHP_INI_DIR}/conf.d/
 COPY src/opcache.ini ${PHP_INI_DIR}/conf.d/
+COPY src/php-fpm.conf /usr/local/etc/php-fpm.conf
+COPY src/php-fpm.d/www.conf /usr/local/etc/php-fpm.d/www.conf
 COPY src/supervisor/supervisord.conf /etc/supervisor/supervisord.conf
 
 COPY src/entrypoint.sh /usr/local/bin/
@@ -108,7 +125,7 @@ RUN rm -f /etc/nginx/conf.d/default.conf \
         /etc/nginx/nginx.conf
 
 COPY src/nginx.conf /etc/nginx/nginx.conf
-COPY src/default.conf /etc/nginx/conf.d/
+COPY src/nginx-site.conf.template /etc/nginx/templates/nginx-site.conf.template
 
 RUN usermod -u ${USER_ID} ${USER_NAME} && \
     groupmod -g ${GROUP_ID} ${GROUP_NAME}
@@ -118,14 +135,12 @@ RUN mkdir -p /var/log/supervisor /var/log/nginx /var/cache/nginx && \
     chown -R ${USER_NAME}:${GROUP_NAME} \
         /var/www \
         /var/log \
-        /etc/supervisor/conf.d \
-        ${PHP_INI_DIR}/conf.d \
         /var/cache/nginx \
         /var/lib/nginx \
-        /etc/nginx/nginx.conf \
         /var/run/nginx.pid \
         /etc/nginx/conf.d \
         /tmp
 
+USER ${USER_NAME}
 EXPOSE 80
 ENTRYPOINT ["entrypoint.sh"]
