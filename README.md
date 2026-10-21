@@ -125,6 +125,17 @@ Restart the container after editing a mounted configuration. Startup retains an 
 
 The main PHP-FPM configuration uses a single explicit include, so additional pool files are loaded only if you change that main configuration.
 
+PHP and PHP-FPM use regular log files, matching the paths in the PHP-FPM Supervisor program:
+
+| Log content | Path |
+| --- | --- |
+| PHP errors, OPcache diagnostics, FPM errors and captured worker stdout/stderr | `/var/log/supervisor/php-fpm.err.log` |
+| FPM access logs and process stdout captured by Supervisor | `/var/log/supervisor/php-fpm.out.log` |
+
+The image creates both files with ownership `www-data` (UID/GID `1000:1000`) so PHP-FPM can write them even when a custom Supervisord configuration runs Supervisor as root. If you mount a host log directory, provide writable files and directories for that user. PHP-FPM does not reopen `/proc/self/fd/2` for its logs.
+
+PHP/FPM and Supervisor share these files, so the PHP-FPM Supervisor program sets `stderr_logfile_maxbytes=0` and `stdout_logfile_maxbytes=0` to disable Supervisor rotation. Set both options in every program sharing these paths in a mounted custom Supervisord file, including a cron program if it uses the same logs; these log files require external retention management. Update any mounted PHP, OPcache or PHP-FPM configuration to use the same paths as the defaults below.
+
 ## Default configuration files
 
 These are the complete default configurations supplied by this repository. The Nginx site block shows the rendered defaults from the shipped template and can be copied to a host file for a direct mount. Only an absent active site is generated with `DOCUMENT_ROOT` and `DOMAIN`; existing files are retained. PHP-FPM and Supervisord load their main files directly.
@@ -279,6 +290,9 @@ autostart=true
 autorestart=true
 stderr_logfile=/var/log/supervisor/php-fpm.err.log
 stdout_logfile=/var/log/supervisor/php-fpm.out.log
+; PHP and FPM also write these files directly; keep their open log files intact.
+stderr_logfile_maxbytes=0
+stdout_logfile_maxbytes=0
 user=www-data
 priority=1
 
@@ -305,6 +319,7 @@ Source: [`src/php.ini`](src/php.ini)
 date.timezone=UTC
 display_errors=Off
 log_errors=On
+error_log=/var/log/supervisor/php-fpm.err.log
 upload_max_filesize= 80M
 post_max_size= 80M
 memory_limit = 256M
@@ -402,10 +417,10 @@ opcache.fast_shutdown=1
 ; is not being accessed.
 ;opcache.force_restart_timeout=180
 
-; OPcache error_log file name. Empty string assumes "stderr".
-;opcache.error_log=
+; OPcache diagnostics use the same error log as PHP and PHP-FPM.
+opcache.error_log=/var/log/supervisor/php-fpm.err.log
 
-; All OPcache errors go to the Web server log.
+; Severity threshold for OPcache diagnostics.
 ; By default, only fatal errors (level 0) or errors (level 1) are logged.
 ; You can also enable warnings (level 2), info messages (level 3) or
 ; debug messages (level 4).
@@ -465,7 +480,7 @@ Source: [`src/php-fpm.conf`](src/php-fpm.conf)
 ```ini
 [global]
 daemonize = no
-error_log = /proc/self/fd/2
+error_log = /var/log/supervisor/php-fpm.err.log
 log_limit = 8192
 
 include = /usr/local/etc/php-fpm.d/www.conf
@@ -490,7 +505,7 @@ pm.start_servers = 2
 pm.min_spare_servers = 1
 pm.max_spare_servers = 3
 
-access.log = /proc/self/fd/2
+access.log = /var/log/supervisor/php-fpm.out.log
 clear_env = no
 catch_workers_output = yes
 decorate_workers_output = no

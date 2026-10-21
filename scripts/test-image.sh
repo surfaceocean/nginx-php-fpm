@@ -91,11 +91,36 @@ expect_status() {
   }
 }
 
+check_php_logs() {
+  local name=$1 marker=$2
+  wait_for_http "$name" "/__build_probe.php?log_probe=$marker"
+  docker exec --user www-data "$name" sh -eu -c '
+    for path in /var/log/supervisor/php-fpm.err.log /var/log/supervisor/php-fpm.out.log; do
+      [ -f "$path" ] && [ ! -L "$path" ] && [ -r "$path" ] && [ -w "$path" ]
+      [ "$(stat -c %u "$path")" = 1000 ]
+    done
+  '
+  for attempt in {1..10}; do
+    if docker exec --user www-data "$name" sh -eu -c '
+      grep -Fq "smoke-php-error-$1" /var/log/supervisor/php-fpm.err.log
+      grep -Fq "smoke-php-worker-$1" /var/log/supervisor/php-fpm.err.log
+      grep -Fq /__build_probe.php /var/log/supervisor/php-fpm.out.log
+    ' sh "$marker"; then return 0; fi
+    sleep 1
+  done
+  echo "PHP error, worker or access log missing: $name" >&2
+  return 1
+}
+
 mkdir -p "$test_dir/app/nested" "$test_dir/app/.git" "$test_dir/app/conf/worker" \
   "$test_dir/app/conf/nginx" "$test_dir/supervisor/conf.d"
 cat > "$test_dir/app/__build_probe.php" <<'PHP'
 <?php
 header('Content-Type: application/json');
+if (isset($_GET['log_probe'])) {
+    trigger_error('smoke-php-error-' . $_GET['log_probe'], E_USER_WARNING);
+    file_put_contents('php://stderr', 'smoke-php-worker-' . $_GET['log_probe'] . "\n");
+}
 echo json_encode(['php' => PHP_VERSION, 'sapi' => PHP_SAPI,
     'query' => $_GET['probe'] ?? '', 'precision' => ini_get('precision'),
     'pool' => getenv('SMOKE_POOL') ?: '']);
@@ -142,6 +167,7 @@ wait_for_http "$container" '/__build_probe.php?probe=runtime-check'
 grep -F "\"php\":\"${php_series}." "$test_dir/response.json"
 grep -F '"sapi":"fpm-fcgi"' "$test_dir/response.json"
 grep -F '"query":"runtime-check"' "$test_dir/response.json"
+check_php_logs "$container" default
 expect_status /nested/allowed.php 200
 for path in / /index.php; do
   docker exec "$container" curl --fail --silent --show-error --max-time 5 \
@@ -233,7 +259,9 @@ server {
 CONF
 cp "$repo_root/src/nginx.conf" "$test_dir/nginx.conf"
 printf '\n# smoke-mounted-nginx-main\n' >> "$test_dir/nginx.conf"
-cp "$repo_root/src/supervisor/supervisord.conf" "$test_dir/supervisord.conf"
+# Exercise a custom root Supervisor while its PHP-FPM and Nginx programs stay www-data.
+sed '1,/^user=www-data$/s/^user=www-data$/user=root/' \
+  "$repo_root/src/supervisor/supervisord.conf" > "$test_dir/supervisord.conf"
 cat >> "$test_dir/supervisord.conf" <<'CONF'
 
 [program:smoke-mounted-supervisor]
@@ -267,8 +295,10 @@ wait_for_http "$mounted_container" /__build_probe.php
 grep -F '"sapi":"fpm-fcgi"' "$test_dir/response.json"
 grep -F '"precision":"12"' "$test_dir/response.json"
 grep -F '"pool":"mounted"' "$test_dir/response.json"
+docker exec "$mounted_container" grep -Eq '^Uid:[[:space:]]+0[[:space:]]+0[[:space:]]+0[[:space:]]+0[[:space:]]*$' /proc/1/status
+check_php_logs "$mounted_container" mounted
 docker exec "$mounted_container" test -f /tmp/smoke-mounted-supervisor
-docker exec "$mounted_container" php-fpm -tt > "$test_dir/fpm-config.txt" 2>&1
+docker exec "$mounted_container" php-fpm -O -tt > "$test_dir/fpm-config.txt" 2>&1
 grep -F 'process.max = 16' "$test_dir/fpm-config.txt"
 docker exec "$mounted_container" nginx -T > "$test_dir/mounted-nginx.conf" 2>&1
 grep -F 'smoke-mounted-nginx-main' "$test_dir/mounted-nginx.conf"

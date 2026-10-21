@@ -132,7 +132,9 @@ RUN usermod -u ${USER_ID} ${USER_NAME} && \
     groupmod -g ${GROUP_ID} ${GROUP_NAME}
 
 RUN mkdir -p /var/log/supervisor /var/log/nginx /var/cache/nginx && \
-    touch /var/run/nginx.pid && \
+    touch /var/run/nginx.pid \
+        /var/log/supervisor/php-fpm.err.log \
+        /var/log/supervisor/php-fpm.out.log && \
     chown -R ${USER_NAME}:${GROUP_NAME} \
         /var/www \
         /var/log \
