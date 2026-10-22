@@ -47,7 +47,6 @@ RUN set -eux; \
         nano \
         nginx \
         openssh-server \
-        software-properties-common \
         sqlite3 \
         sudo \
         supervisor \
