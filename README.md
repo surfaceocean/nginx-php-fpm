@@ -23,25 +23,28 @@ Only PHP 8.4 and PHP 8.5 are supported. Legacy Dockerfiles and build targets hav
 
 ## Included software
 
-- Nginx, PHP-FPM, ImageMagick, Supervisord, Cron and Composer.
+- Nginx, PHP-FPM, ImageMagick, Supervisord, Cron, Composer and PIE.
 - Node.js 24 LTS and npm.
 - PHP extensions: `mysqli`, `mysqlnd`, `pdo_mysql`, `pdo_pgsql`, `apcu`, `sysvsem`, `gmp`, `imagick`, `bz2`, `redis`, `rdkafka`, `memcached`, `zip`, `mbstring`, `exif`, `pcntl`, `bcmath`, `gd`, `intl` and OPcache, alongside the extensions provided by the official PHP image.
 - MySQL extensions use the base image's built-in `mysqlnd` driver. OPcache is compiled separately for PHP 8.4 and is built into PHP 8.5.
-- PECL extensions are compiled from current stable releases during a fresh build. Exact installed versions are recorded after building.
-- PECL channel updates and each extension installation get an initial attempt plus up to ten retries (11 attempts total), with delays of 10, 20, ... 100 seconds before the retries. Exhausting all attempts fails the build.
+- External extensions (`apcu`, `imagick`, `memcached`, `redis` and `rdkafka`) are compiled from the latest compatible stable releases using [PIE](https://github.com/php/pie) during each fresh build. The official `ghcr.io/php/pie:bin` image supplies the installer. PHP's bundled extensions continue to use `docker-php-ext-install`. Exact installed versions are recorded after building.
+
 
 ## Automated builds and version inventory
 
 [Build workflow](.github/workflows/build.yml) runs:
 
 - Daily at **19:00 UTC**.
-- On pushes to `main` that change build inputs.
+- On pushes to `main`, except changes only to `versions.json`.
 - Manually through **Actions → Build → Run workflow**.
-- On pull requests for validation.
+- On pull requests targeting `main`, for validation.
 
 Each PHP version and architecture is built and tested before the release tags are published. AMD64 jobs run natively on `ubuntu-26.04`; ARM64 jobs run natively on `ubuntu-26.04-arm`. Each job verifies the runner architecture before building, and QEMU is not required. The publication job also runs on `ubuntu-26.04`. If any matrix build job fails, the remaining running or queued matrix jobs are cancelled and release publication is skipped. Scheduled builds refresh the base images and compile extensions without reusing old build layers. Docker Hub publishing uses the existing `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` Actions secrets. The repository's built-in `GITHUB_TOKEN` has `contents: write` only in the publication job so it can commit `versions.json`.
 
-At the end of a successful published build, the workflow generates **[`versions.json`](versions.json) in the repository root** and commits it to `main`. It records actual PHP patch versions, every loaded PHP extension's version, tools, linked libraries and image digests, separately for PHP 8.4/8.5 and each architecture. Values come from the built images. The initial file has no releases until a build has completed. Inventory-only commits do not trigger another build.
+After each successful image publication, the workflow generates **[`versions.json`](versions.json)** in the repository root and commits any changes to `main` when the build source is still current. The file records actual PHP patch versions, every loaded PHP extension's version, tools, linked libraries and image digests, separately for PHP 8.4/8.5 and each architecture. Values come from the built images. Inventory-only commits do not trigger another build.
+
+GitHub automatically disables scheduled workflows in public repositories after [60 days of repository inactivity](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
+
 
 The inventory script is also installed in each image:
 
@@ -56,6 +59,8 @@ Enable GitHub Actions in the repository's **Actions** tab and configure these re
 - `DOCKERHUB_TOKEN`: a Docker Hub access token with permission to push to that repository.
 
 Push these changes to `main` and run **Build** once if needed. Repository policies must allow the bot's `versions.json` commit. If `main` requires pull requests for every change, configure an appropriate bypass for the publishing bot.
+
+Docker Hub publication and automatic version commits are enabled only for `surfaceocean/nginx-php-fpm`. Forks must update the repository checks in the build workflow before publishing.
 
 ## Run the image
 
@@ -87,6 +92,7 @@ services:
       DOCUMENT_ROOT: /var/www/html
       DOMAIN: _
 ```
+
 
 Mounting `./app` replaces the bundled application, so provide your own `index.php`. The default document root is `/var/www/html`; `DOMAIN` defaults to `_`. These two environment variables are used only when `/etc/nginx/conf.d/nginx-site.conf` is absent. On first startup, the entrypoint generates that file from the template at `/etc/nginx/templates/nginx-site.conf.template`. An existing site file is loaded without being rewritten, so a read-only mount is supported. The main Nginx configuration sets `client_max_body_size 256m;`, which the default site inherits.
 
@@ -121,20 +127,24 @@ Each file replaces a complete configuration at the corresponding path; start fro
 | PHP-FPM main | `/usr/local/etc/php-fpm.conf` | Mount your replacement directly at this path. The default explicitly includes only `/usr/local/etc/php-fpm.d/www.conf`. |
 | PHP-FPM pool | `/usr/local/etc/php-fpm.d/www.conf` | Mount your replacement directly at this path. The default listens on `127.0.0.1:9000`, matching Nginx. |
 
-Restart the container after editing a mounted configuration. Startup retains an existing Nginx site file across restarts. For a generated site stored only in the container's writable layer, recreate the container to apply new environment values. If the site file is persisted in a volume or mounted from the host, edit that file directly. The entrypoint generates a missing Nginx site as `root` before Supervisord drops privileges. The `/etc/nginx/conf.d` directory remains writable by `www-data`. Startup does not copy or import configuration from the application directory.
 
 The main PHP-FPM configuration uses a single explicit include, so additional pool files are loaded only if you change that main configuration.
 
-PHP and PHP-FPM use regular log files, matching the paths in the PHP-FPM Supervisor program:
+Nginx, PHP, PHP-FPM and Supervisor write regular log files under `/var/log/supervisor/`:
 
 | Log content | Path |
 | --- | --- |
 | PHP errors, OPcache diagnostics, FPM errors and captured worker stdout/stderr | `/var/log/supervisor/php-fpm.err.log` |
 | FPM access logs and process stdout captured by Supervisor | `/var/log/supervisor/php-fpm.out.log` |
+| Nginx request access log | `/var/log/supervisor/nginx.access.log` |
+| Nginx error log | `/var/log/supervisor/nginx.error.log` |
+| Nginx process stderr captured by Supervisor | `/var/log/supervisor/nginx.err.log` |
+| Nginx process stdout captured by Supervisor | `/var/log/supervisor/nginx.out.log` |
+| Supervisor activity log | `/var/log/supervisor/supervisord.log` |
 
-The image creates both files with ownership `www-data` (UID/GID `1000:1000`) so PHP-FPM can write them even when a custom Supervisord configuration runs Supervisor as root. If you mount a host log directory, provide writable files and directories for that user. PHP-FPM does not reopen `/proc/self/fd/2` for its logs.
+The image creates these log files as `root:www-data` with mode `0660` (default application GID `1000`), so the application processes can write their contents while their root-owned parent directory prevents file replacement. If you mount a host log directory, preserve equivalent permissions. PHP-FPM does not reopen `/proc/self/fd/2` for its logs.
 
-PHP/FPM and Supervisor share these files, so the PHP-FPM Supervisor program sets `stderr_logfile_maxbytes=0` and `stdout_logfile_maxbytes=0` to disable Supervisor rotation. Set both options in every program sharing these paths in a mounted custom Supervisord file, including a cron program if it uses the same logs; these log files require external retention management. Update any mounted PHP, OPcache or PHP-FPM configuration to use the same paths as the defaults below.
+The default Supervisor configuration disables file rotation for all its logs, so use external log retention management. PHP/FPM and Supervisor share the PHP log files; keep `stderr_logfile_maxbytes=0` and `stdout_logfile_maxbytes=0` in every program sharing these paths in a mounted custom Supervisord file, including a cron program if it uses the same logs. Update any mounted Nginx, Supervisord, PHP, OPcache or PHP-FPM configuration to use the same paths as the defaults below.
 
 ## Default configuration files
 
@@ -148,7 +158,7 @@ Source: [`src/nginx.conf`](src/nginx.conf)
 ```nginx
 user www-data;
 worker_processes auto;
-error_log               /var/log/nginx/error.log crit;
+error_log               /var/log/supervisor/nginx.error.log warn;
 pid                     /var/run/nginx.pid;
 include /etc/nginx/modules-enabled/*.conf;
 
@@ -186,7 +196,6 @@ http {
 	# Compression gzip
 	gzip on;
 	gzip_vary on;
-	gzip_disable "MSIE [1-6]\.";
 	gzip_proxied any;
 	gzip_min_length 512;
 	gzip_comp_level 6;
@@ -236,8 +245,8 @@ server {
     root /var/www/html;
     index index.php;
 
-    error_log  /var/log/nginx/error.log;
-    access_log /var/log/nginx/access.log;
+    error_log  /var/log/supervisor/nginx.error.log warn;
+    access_log /var/log/supervisor/nginx.access.log;
 
     server_tokens off;
 
@@ -278,8 +287,9 @@ Source: [`src/supervisor/supervisord.conf`](src/supervisor/supervisord.conf)
 nodaemon=true
 user=www-data
 logfile=/var/log/supervisor/supervisord.log
-logfile_maxbytes = 50MB
-pidfile=/tmp/supervisord.pid
+; Log directories are root-owned; rotate these files externally.
+logfile_maxbytes=0
+pidfile=/var/run/supervisor/supervisord.pid
 directory = /tmp
 
 
@@ -297,13 +307,14 @@ user=www-data
 priority=1
 
 [program:nginx]
-command=/usr/sbin/nginx -g "daemon off;"
+command=/usr/sbin/nginx -e /var/log/supervisor/nginx.error.log -g "daemon off;"
 numprocs=1
 autostart=true
 autorestart=true
-stderr_logfile=/var/log/nginx/nginx.err.log
-stdout_logfile=/var/log/nginx/nginx.out.log
-logfile_maxbytes = 50MB
+stderr_logfile=/var/log/supervisor/nginx.err.log
+stdout_logfile=/var/log/supervisor/nginx.out.log
+stderr_logfile_maxbytes=0
+stdout_logfile_maxbytes=0
 user=www-data
 priority=2
 ```
@@ -383,10 +394,6 @@ opcache.revalidate_freq=0
 ; size of the optimized code.
 opcache.save_comments=1
 
-; If enabled, a fast shutdown sequence is used for the accelerated code
-; Depending on the used Memory Manager this may cause some incompatibilities.
-opcache.fast_shutdown=1
-
 ; Allow file existence override (file_exists, etc.) performance feature.
 ;opcache.enable_file_override=0
 
@@ -394,7 +401,6 @@ opcache.fast_shutdown=1
 ; passes
 ;opcache.optimization_level=0xffffffff
 
-;opcache.inherited_hack=1
 ;opcache.dups_fix=0
 
 ; The location of the OPcache blacklist file (wildcards allowed).
@@ -408,10 +414,6 @@ opcache.fast_shutdown=1
 ; Allows exclusion of large files from being cached. By default all files
 ; are cached.
 ;opcache.max_file_size=0
-
-; Check the cache checksum each N requests.
-; The default value of "0" means that the checks are disabled.
-;opcache.consistency_checks=0
 
 ; How long to wait (in seconds) for a scheduled restart to begin if the cache
 ; is not being accessed.
@@ -437,12 +439,6 @@ opcache.error_log=/var/log/supervisor/php-fpm.err.log
 ; started from specified string. The default "" means no restriction
 ;opcache.restrict_api=
 
-; Mapping base of shared memory segments (for Windows only). All the PHP
-; processes have to map shared memory into the same address space. This
-; directive allows to manually fix the "Unable to reattach to base address"
-; errors.
-opcache.mmap_base=0x20000000
-
 ; Enables and sets the second level cache directory.
 ; It should improve performance when SHM memory is full, at server restart or
 ; SHM reset. The default "" disables file based caching.
@@ -453,11 +449,6 @@ opcache.mmap_base=0x20000000
 
 ; Enables or disables checksum validation when script loaded from file cache.
 ;opcache.file_cache_consistency_checks=1
-
-; Implies opcache.file_cache_only=1 for a certain process that failed to
-; reattach to the shared memory (for Windows only). Explicitly enabled file
-; cache is required.
-opcache.file_cache_fallback=1
 
 ; Enables or disables copying of PHP code (text segment) into HUGE PAGES.
 ; This should improve performance, but requires appropriate OS configuration.
@@ -517,7 +508,7 @@ OPcache timestamp validation is disabled by default. Restart the container after
 
 ## Local builds
 
-Docker and Python 3.9+ are required; `make` is optional. Run from the repository root:
+Bash, Docker and Python 3.9+ are required for scripted local builds; `make` is optional. Run from the repository root:
 
 ```sh
 bash ./build.sh 8.4

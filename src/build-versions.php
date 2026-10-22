@@ -25,6 +25,19 @@ function toolVersion(string $command, string $pattern): string
     return $matches[1];
 }
 
+function nativePackageVersion(string $package): string
+{
+    $output = commandOutput(
+        "dpkg-query -W -f='\${db:Status-Status}\\t\${Version}' " . escapeshellarg($package)
+    );
+    [$state, $version] = array_pad(explode("\t", $output, 2), 2, '');
+    if ($state !== 'installed' || trim($version) === '') {
+        throw new RuntimeException('Native package is not installed or has no version: ' . $package);
+    }
+
+    return $version;
+}
+
 try {
     if (!in_array(PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION, ['8.4', '8.5'], true)) {
         throw new RuntimeException('Only PHP 8.4 and PHP 8.5 are supported.');
@@ -66,16 +79,14 @@ try {
 
     // Debian revisions identify the actual native libraries used during compilation.
     $packages = [
-        'libbz2-dev', 'libfreetype6-dev', 'libgmp-dev', 'libicu-dev',
+        'libbz2-dev', 'libfreetype-dev', 'libgmp-dev', 'libicu-dev',
         'libjpeg62-turbo-dev', 'libmagickwand-dev', 'libmemcached-dev',
         'libonig-dev', 'libpng-dev', 'libpq-dev', 'librdkafka-dev',
         'libsasl2-dev', 'libxml2-dev', 'libzip-dev', 'zlib1g-dev',
     ];
     $nativePackages = [];
     foreach ($packages as $package) {
-        $nativePackages[$package] = commandOutput(
-            "dpkg-query -W -f='\${Version}' " . escapeshellarg($package)
-        );
+        $nativePackages[$package] = nativePackageVersion($package);
     }
     ksort($libraries);
 

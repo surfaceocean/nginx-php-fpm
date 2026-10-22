@@ -42,14 +42,29 @@ $imagick->clear();
 check(new Redis() instanceof Redis, 'Redis initialization failed');
 check(new Memcached() instanceof Memcached, 'Memcached initialization failed');
 check(new RdKafka\Conf() instanceof RdKafka\Conf, 'Rdkafka initialization failed');
+$inventory = json_decode(file_get_contents('/usr/local/share/build-versions.json'), true, 512, JSON_THROW_ON_ERROR);
+$freeTypeVersion = shell_exec("dpkg-query -W -f='\${Version}' libfreetype-dev");
+check(is_string($freeTypeVersion) && trim($freeTypeVersion) !== '', 'Installed FreeType version missing');
+check(($inventory['native_packages']['libfreetype-dev'] ?? null) === trim($freeTypeVersion), 'Recorded FreeType version differs from installed package');
+
 echo 'Compiled extension smoke tests passed', PHP_EOL;
 PHP
 
-docker run --rm --platform "$platform" --entrypoint nginx "$image" -t
+docker run --rm --platform "$platform" --entrypoint nginx "$image" \
+  -e /var/log/supervisor/nginx.error.log -t
 docker run --rm --platform "$platform" --entrypoint php-fpm "$image" -t
 docker run --rm --platform "$platform" --entrypoint sh "$image" -eu -c '
   [ ! -e /etc/nginx/conf.d/nginx-site.conf ]
   [ ! -L /etc/nginx/conf.d/nginx-site.conf ]
+'
+
+# Verify image-owned writable paths before docker cp adds root-owned fixtures.
+docker run --rm --platform "$platform" --user www-data --entrypoint sh "$image" -eu -c '
+  for directory in /var/www/html /var/cache/nginx /var/lib/nginx; do
+    probe=$(mktemp "$directory/.smoke-write.XXXXXX")
+    printf "application writes still work\n" > "$probe"
+    rm -- "$probe"
+  done
 '
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -97,7 +112,7 @@ check_php_logs() {
   docker exec --user www-data "$name" sh -eu -c '
     for path in /var/log/supervisor/php-fpm.err.log /var/log/supervisor/php-fpm.out.log; do
       [ -f "$path" ] && [ ! -L "$path" ] && [ -r "$path" ] && [ -w "$path" ]
-      [ "$(stat -c %u "$path")" = 1000 ]
+      [ "$(stat -c %u:%g:%a "$path")" = 0:1000:660 ]
     done
   '
   for attempt in {1..10}; do
@@ -105,11 +120,93 @@ check_php_logs() {
       grep -Fq "smoke-php-error-$1" /var/log/supervisor/php-fpm.err.log
       grep -Fq "smoke-php-worker-$1" /var/log/supervisor/php-fpm.err.log
       grep -Fq /__build_probe.php /var/log/supervisor/php-fpm.out.log
+      grep -Fq "log_probe=$1" /var/log/supervisor/nginx.access.log
+      grep -Fq "supervisord started with pid" /var/log/supervisor/supervisord.log
     ' sh "$marker"; then return 0; fi
     sleep 1
   done
-  echo "PHP error, worker or access log missing: $name" >&2
+  echo "PHP, Nginx or Supervisor runtime log missing: $name" >&2
   return 1
+}
+
+check_runtime_permissions() {
+  local name=$1
+  # This root fixture must survive operations by the application account in /tmp.
+  docker exec "$name" sh -eu -c '
+    printf "smoke-root-sticky\n" > /tmp/smoke-root-sticky
+    chown root:root /tmp/smoke-root-sticky
+    chmod 644 /tmp/smoke-root-sticky
+  '
+  docker exec --user www-data "$name" sh -eu -c '
+    expect_denied() {
+      if "$@" >/dev/null 2>&1; then
+        echo "Application unexpectedly allowed to run: $*" >&2
+        exit 1
+      fi
+    }
+    [ "$(id -u):$(id -g)" = 1000:1000 ]
+    replacement=$(mktemp /tmp/smoke-replacement.XXXXXX)
+    trap '\''rm -f -- "$replacement"'\'' 0
+    printf "smoke-replacement\n" > "$replacement"
+    for path in /var/www /var/log /var/log/supervisor \
+      /etc/nginx/conf.d /var/run/supervisor; do
+      [ "$(stat -c %u:%g:%a "$path")" = 0:0:755 ]
+      [ ! -w "$path" ]
+      expect_denied sh -c '\''printf "unexpected\n" > "$1/.smoke-unexpected"'\'' sh "$path"
+      expect_denied mkdir "$path/.smoke-unexpected-dir"
+    done
+    [ "$(stat -c %u:%g:%a /tmp)" = 0:0:1777 ]
+    [ -w /tmp ]
+    expect_denied rm -- /tmp/smoke-root-sticky
+    expect_denied mv -- "$replacement" /tmp/smoke-root-sticky
+    expect_denied ln -sf -- "$replacement" /tmp/smoke-root-sticky
+    expect_denied sh -c '\''printf "unexpected\n" > /tmp/smoke-root-sticky'\''
+    [ "$(stat -c %u:%g:%a /tmp/smoke-root-sticky)" = 0:0:644 ]
+    grep -Fxq smoke-root-sticky /tmp/smoke-root-sticky
+
+    for path in /var/log/supervisor/supervisord.log \
+      /var/log/supervisor/php-fpm.err.log /var/log/supervisor/php-fpm.out.log \
+      /var/log/supervisor/nginx.access.log /var/log/supervisor/nginx.error.log \
+      /var/log/supervisor/nginx.err.log /var/log/supervisor/nginx.out.log \
+      /var/run/nginx.pid /var/run/supervisor/supervisord.pid; do
+      [ -f "$path" ] && [ ! -L "$path" ] && [ -r "$path" ] && [ -w "$path" ]
+      [ "$(stat -c %u:%g:%a "$path")" = 0:1000:660 ]
+      inode=$(stat -c %i "$path")
+      case "$path" in
+        /var/log/*)
+          printf "smoke-application-log-write\n" >> "$path"
+          grep -Fxq smoke-application-log-write "$path"
+          ;;
+        *) : >> "$path" ;; # Opening a PID file must not alter its running PID.
+      esac
+      expect_denied rm -- "$path"
+      expect_denied mv -- "$replacement" "$path"
+      expect_denied ln -sf -- "$replacement" "$path"
+      [ ! -L "$path" ] && [ "$(stat -c %i "$path")" = "$inode" ]
+    done
+    [ "$(cat /var/run/supervisor/supervisord.pid)" = 1 ]
+
+    # The app must not edit, unlink or replace any supported main configuration.
+    for path in /etc/supervisor /etc/nginx /etc/nginx/templates \
+      /usr/local/etc/php/conf.d /usr/local/etc/php-fpm.d; do
+      [ ! -w "$path" ]
+      expect_denied sh -c '\''printf "# unexpected\n" > "$1/smoke-unexpected.conf"'\'' sh "$path"
+      expect_denied mkdir "$path/.smoke-unexpected-dir"
+    done
+    for path in /etc/supervisor/supervisord.conf /etc/nginx/nginx.conf \
+      /etc/nginx/conf.d/nginx-site.conf /etc/nginx/templates/nginx-site.conf.template \
+      /usr/local/etc/php/conf.d/php.ini /usr/local/etc/php/conf.d/opcache.ini \
+      /usr/local/etc/php-fpm.conf /usr/local/etc/php-fpm.d/www.conf; do
+      [ -f "$path" ] && [ -r "$path" ] && [ ! -w "$path" ]
+      inode=$(stat -c %i "$path")
+      expect_denied sh -c '\''printf "# unexpected\n" >> "$1"'\'' sh "$path"
+      expect_denied rm -- "$path"
+      expect_denied mv -- "$replacement" "$path"
+      expect_denied ln -sf -- "$replacement" "$path"
+      [ ! -L "$path" ] && [ "$(stat -c %i "$path")" = "$inode" ]
+    done
+    expect_denied sh -c '\''printf "# unexpected\n" > /etc/nginx/conf.d/smoke-unexpected.conf'\''
+  '
 }
 
 mkdir -p "$test_dir/app/nested" "$test_dir/app/.git" "$test_dir/app/conf/worker" \
@@ -168,6 +265,7 @@ grep -F "\"php\":\"${php_series}." "$test_dir/response.json"
 grep -F '"sapi":"fpm-fcgi"' "$test_dir/response.json"
 grep -F '"query":"runtime-check"' "$test_dir/response.json"
 check_php_logs "$container" default
+check_runtime_permissions "$container"
 expect_status /nested/allowed.php 200
 for path in / /index.php; do
   docker exec "$container" curl --fail --silent --show-error --max-time 5 \
@@ -194,14 +292,22 @@ docker exec --user www-data "$container" sh -eu -c '
   for field in Uid Gid; do
     grep -Eq "^$field:[[:space:]]+1000[[:space:]]+1000[[:space:]]+1000[[:space:]]+1000[[:space:]]*$" /proc/1/status
   done
-  for path in /etc/supervisor /etc/supervisor/supervisord.conf /etc/nginx \
-    /etc/nginx/nginx.conf /etc/nginx/templates /etc/nginx/templates/nginx-site.conf.template \
+  for path in /usr/local/bin /usr/local/bin/entrypoint.sh /usr/local/bin/php \
+    /usr/local/bin/build-versions.php \
+    /usr/local/sbin /usr/local/sbin/php-fpm /usr/bin/supervisord /usr/sbin/nginx \
+    /etc/supervisor /etc/supervisor/supervisord.conf /etc/nginx /etc/nginx/conf.d \
+    /etc/nginx/conf.d/nginx-site.conf /etc/nginx/nginx.conf \
+    /etc/nginx/templates /etc/nginx/templates/nginx-site.conf.template \
     /usr/local/etc /usr/local/etc/php /usr/local/etc/php/conf.d \
     /usr/local/etc/php-fpm.conf /usr/local/etc/php-fpm.d /usr/local/etc/php-fpm.d/www.conf; do
     [ "$(stat -c %u "$path")" = 0 ] && [ ! -w "$path" ] || {
       echo "Runtime can alter protected configuration: $path" >&2; exit 1;
     }
   done
+  [ "$(stat -c %u:%g:%a /etc/nginx/conf.d/nginx-site.conf)" = 0:0:644 ]
+  [ "$(readlink /entrypoint.sh)" = /usr/local/bin/entrypoint.sh ]
+  [ ! -w / ]
+  [ "$(grep -Ec "^[[:space:]]*(logfile_maxbytes|stderr_logfile_maxbytes|stdout_logfile_maxbytes)[[:space:]]*=[[:space:]]*0[[:space:]]*$" /etc/supervisor/supervisord.conf)" = 5 ]
   [ -z "$(find /usr/local/etc/php /usr/local/etc/php-fpm.d \( ! -user root -o -writable \) -print -quit)" ]
   ! grep -Eiq "^[[:space:]]*\\[include\\]" /etc/supervisor/supervisord.conf
   includes=$(sed -n "s/^[[:space:]]*include[[:space:]]*=[[:space:]]*//p" /usr/local/etc/php-fpm.conf)
@@ -213,7 +319,7 @@ docker exec --user www-data "$container" sh -eu -c '
   ! grep -Fq "smoke-legacy-nginx-main" /etc/nginx/nginx.conf
   ! grep -Fq "smoke-legacy-nginx-site" /etc/nginx/conf.d/nginx-site.conf
 '
-docker exec "$container" nginx -t
+docker exec "$container" nginx -e /var/log/supervisor/nginx.error.log -t
 docker exec "$container" php-fpm -t
 
 # An existing active site must survive restart without regeneration or replacement.
@@ -248,6 +354,8 @@ server {
     listen 80 default_server;
     server_name _;
     root /var/www/html;
+    access_log /var/log/supervisor/nginx.access.log;
+    error_log /var/log/supervisor/nginx.error.log warn;
     location = /style.css { try_files $uri =404; }
     location = /__build_probe.php {
         include fastcgi_params;
@@ -297,10 +405,12 @@ grep -F '"precision":"12"' "$test_dir/response.json"
 grep -F '"pool":"mounted"' "$test_dir/response.json"
 docker exec "$mounted_container" grep -Eq '^Uid:[[:space:]]+0[[:space:]]+0[[:space:]]+0[[:space:]]+0[[:space:]]*$' /proc/1/status
 check_php_logs "$mounted_container" mounted
+check_runtime_permissions "$mounted_container"
 docker exec "$mounted_container" test -f /tmp/smoke-mounted-supervisor
 docker exec "$mounted_container" php-fpm -O -tt > "$test_dir/fpm-config.txt" 2>&1
 grep -F 'process.max = 16' "$test_dir/fpm-config.txt"
-docker exec "$mounted_container" nginx -T > "$test_dir/mounted-nginx.conf" 2>&1
+docker exec "$mounted_container" nginx -e /var/log/supervisor/nginx.error.log -T \
+  > "$test_dir/mounted-nginx.conf" 2>&1
 grep -F 'smoke-mounted-nginx-main' "$test_dir/mounted-nginx.conf"
 grep -F 'smoke-mounted-nginx-site' "$test_dir/mounted-nginx.conf"
 docker exec --user www-data "$mounted_container" sh -eu -c '
@@ -308,6 +418,13 @@ docker exec --user www-data "$mounted_container" sh -eu -c '
   [ ! -w /etc/nginx/conf.d/nginx-site.conf ]
 '
 docker stop "$mounted_container" >/dev/null
+# Root Supervisor removes its PID at shutdown. The root entrypoint must restore
+# the protected, group-writable file before Supervisor starts on the next run.
+if docker cp "$mounted_container:/var/run/supervisor/supervisord.pid" \
+  "$test_dir/mounted-pid-after-stop" >/dev/null 2>&1; then
+  echo "Root Supervisor did not remove its PID file on shutdown" >&2
+  exit 1
+fi
 docker start "$mounted_container" >/dev/null
 wait_for_http "$mounted_container" /style.css
 [[ $(cat "$test_dir/response.json") == smoke-private-content ]]
@@ -315,6 +432,12 @@ wait_for_http "$mounted_container" /__build_probe.php
 grep -F '"precision":"12"' "$test_dir/response.json"
 grep -F '"pool":"mounted"' "$test_dir/response.json"
 docker cp "$mounted_container:/etc/nginx/nginx.conf" "$test_dir/mounted-main-after.conf"
+check_php_logs "$mounted_container" mounted-restarted
+docker exec --user www-data "$mounted_container" sh -eu -c '
+  [ "$(stat -c %u:%g:%a /var/run/supervisor)" = 0:0:755 ]
+  [ "$(stat -c %u:%g:%a /var/run/supervisor/supervisord.pid)" = 0:1000:660 ]
+  [ "$(cat /var/run/supervisor/supervisord.pid)" = 1 ]
+'
 docker cp "$mounted_container:/etc/nginx/conf.d/nginx-site.conf" "$test_dir/mounted-site-after.conf"
 cmp "$test_dir/nginx.conf" "$test_dir/mounted-main-after.conf"
 cmp "$test_dir/site.conf" "$test_dir/mounted-site-after.conf"
@@ -335,7 +458,7 @@ grep -Eq '^[[:space:]]*server_name example[.]test;[[:space:]]*$' "$test_dir/env-
 grep -Eq '^[[:space:]]*root /var/www/html/public;[[:space:]]*$' "$test_dir/env-site.conf"
 grep -F 'try_files $uri =404;' "$test_dir/env-site.conf"
 grep -F 'fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;' "$test_dir/env-site.conf"
-docker exec "$env_container" nginx -t
+docker exec "$env_container" nginx -e /var/log/supervisor/nginx.error.log -t
 
 # A dangling active-site symlink must be rejected without touching it or its target.
 docker create --platform "$platform" --name "$invalid_container" --entrypoint sh \

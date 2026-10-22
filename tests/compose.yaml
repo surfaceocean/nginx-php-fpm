@@ -1,6 +1,6 @@
 services:
     mysql:
-      image: mysql:8.0
+      image: mysql:9.7
       container_name: mysql
       restart: unless-stopped
       environment:
@@ -8,6 +8,8 @@ services:
         MYSQL_ROOT_PASSWORD: password
         MYSQL_PASSWORD: password
         MYSQL_USER: php
+      volumes:
+       - ./mysql-init.sql:/docker-entrypoint-initdb.d/10-nextcloud-compat.sql:ro
       ports:
        - 3306:3306
     nginx-php-fpm:

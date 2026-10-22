@@ -29,7 +29,7 @@ RUN set -eux; \
         git \
         imagemagick \
         libbz2-dev \
-        libfreetype6-dev \
+        libfreetype-dev \
         libgmp-dev \
         libicu-dev \
         libjpeg62-turbo-dev \
@@ -40,6 +40,7 @@ RUN set -eux; \
         libpq-dev \
         librdkafka-dev \
         libsasl2-dev \
+        libtool \
         libxml2-dev \
         libzip-dev \
         nano \
@@ -74,7 +75,9 @@ RUN set -eux; \
     docker-php-ext-install -j"$(nproc)" $extensions
 
 # PHP 8.5 includes OPcache itself; the conditional above builds it only for 8.4.
-# Resolve the latest stable PECL releases on each uncached daily build.
+COPY --from=ghcr.io/php/pie:bin /pie /usr/local/bin/pie
+
+# Resolve the latest compatible stable extension releases on each fresh build.
 # Retry each network operation up to ten times after its initial attempt.
 RUN set -eux; \
     retry() { \
@@ -91,13 +94,10 @@ RUN set -eux; \
             sleep "$((retries * 10))"; \
         done; \
     }; \
-    retry pecl channel-update pecl.php.net; \
-    pecl config-set preferred_state stable; \
-    for extension in apcu imagick memcached redis rdkafka; do \
-        retry pecl install "$extension" </dev/null; \
+    for package in apcu/apcu imagick/imagick php-memcached/php-memcached phpredis/phpredis rdkafka/rdkafka; do \
+        retry pie install --no-interaction --no-cache --skip-enable-extension "$package" </dev/null; \
     done; \
-    docker-php-ext-enable apcu imagick memcached redis rdkafka; \
-    rm -rf /tmp/pear
+    docker-php-ext-enable apcu imagick memcached redis rdkafka
 
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 COPY src/build-versions.php /usr/local/bin/build-versions.php
@@ -131,18 +131,26 @@ COPY src/nginx-site.conf.template /etc/nginx/templates/nginx-site.conf.template
 RUN usermod -u ${USER_ID} ${USER_NAME} && \
     groupmod -g ${GROUP_ID} ${GROUP_NAME}
 
-RUN mkdir -p /var/log/supervisor /var/log/nginx /var/cache/nginx && \
-    touch /var/run/nginx.pid \
+RUN set -eux; \
+    mkdir -p /var/log/supervisor /var/cache/nginx \
+        /var/lib/nginx /var/run/supervisor; \
+    chown -R "${USER_NAME}:${GROUP_NAME}" \
+        "${WORKDIR}" /var/cache/nginx /var/lib/nginx; \
+    chown root:root /var/log /var/log/supervisor \
+        /etc/nginx/conf.d /var/run/supervisor /tmp; \
+    chmod 755 /var/log /var/log/supervisor \
+        /etc/nginx/conf.d /var/run/supervisor; \
+    chmod 1777 /tmp; \
+    for path in /var/run/nginx.pid /var/run/supervisor/supervisord.pid \
+        /var/log/supervisor/supervisord.log \
         /var/log/supervisor/php-fpm.err.log \
-        /var/log/supervisor/php-fpm.out.log && \
-    chown -R ${USER_NAME}:${GROUP_NAME} \
-        /var/www \
-        /var/log \
-        /var/cache/nginx \
-        /var/lib/nginx \
-        /var/run/nginx.pid \
-        /etc/nginx/conf.d \
-        /tmp
+        /var/log/supervisor/php-fpm.out.log \
+        /var/log/supervisor/nginx.error.log /var/log/supervisor/nginx.access.log \
+        /var/log/supervisor/nginx.err.log /var/log/supervisor/nginx.out.log; do \
+        touch "$path"; \
+        chown "root:$(id -g "${USER_NAME}")" "$path"; \
+        chmod 660 "$path"; \
+    done
 
 # Start as root; the default Supervisord configuration drops to www-data.
 USER root

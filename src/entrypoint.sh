@@ -27,4 +27,12 @@ else
   info "Generated default $NGINX_SITE_CONF"
 fi
 
+# Root Supervisor removes its PID on shutdown; restore the fixed writable file
+# inside its protected directory before the default Supervisor drops privileges.
+if [ "$(id -u)" -eq 0 ]; then
+  touch /var/run/supervisor/supervisord.pid
+  chown "root:$(id -g www-data)" /var/run/supervisor/supervisord.pid
+  chmod 660 /var/run/supervisor/supervisord.pid
+fi
+
 exec supervisord -c /etc/supervisor/supervisord.conf
