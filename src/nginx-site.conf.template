@@ -5,8 +5,8 @@ server {
     root ${DOCUMENT_ROOT};
     index index.php;
 
-    error_log  /var/log/supervisor/nginx.error.log warn;
-    access_log /var/log/supervisor/nginx.access.log;
+    error_log  /var/log/supervisor/nginx.err.log warn;
+    access_log /var/log/supervisor/nginx.out.log;
 
     server_tokens off;
 

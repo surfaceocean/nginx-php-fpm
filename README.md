@@ -25,6 +25,7 @@ Only PHP 8.4 and PHP 8.5 are supported. Legacy Dockerfiles and build targets hav
 
 - Nginx, PHP-FPM, ImageMagick, Supervisord, Cron, Composer and PIE.
 - Node.js 24 LTS and npm.
+- Administration tools: `sudo`, `apt-utils` and `software-properties-common`.
 - PHP extensions: `mysqli`, `mysqlnd`, `pdo_mysql`, `pdo_pgsql`, `apcu`, `sysvsem`, `gmp`, `imagick`, `bz2`, `redis`, `rdkafka`, `memcached`, `zip`, `mbstring`, `exif`, `pcntl`, `bcmath`, `gd`, `intl` and OPcache, alongside the extensions provided by the official PHP image.
 - MySQL extensions use the base image's built-in `mysqlnd` driver. OPcache is compiled separately for PHP 8.4 and is built into PHP 8.5.
 - External extensions (`apcu`, `imagick`, `memcached`, `redis` and `rdkafka`) are compiled from the latest compatible stable releases using [PIE](https://github.com/php/pie) during each fresh build. The official `ghcr.io/php/pie:bin` image supplies the installer. PHP's bundled extensions continue to use `docker-php-ext-install`. Exact installed versions are recorded after building.
@@ -136,15 +137,13 @@ Nginx, PHP, PHP-FPM and Supervisor write regular log files under `/var/log/super
 | --- | --- |
 | PHP errors, OPcache diagnostics, FPM errors and captured worker stdout/stderr | `/var/log/supervisor/php-fpm.err.log` |
 | FPM access logs and process stdout captured by Supervisor | `/var/log/supervisor/php-fpm.out.log` |
-| Nginx request access log | `/var/log/supervisor/nginx.access.log` |
-| Nginx error log | `/var/log/supervisor/nginx.error.log` |
-| Nginx process stderr captured by Supervisor | `/var/log/supervisor/nginx.err.log` |
-| Nginx process stdout captured by Supervisor | `/var/log/supervisor/nginx.out.log` |
+| Nginx errors and process stdout/stderr captured by Supervisor | `/var/log/supervisor/nginx.err.log` |
+| Nginx request access logs | `/var/log/supervisor/nginx.out.log` |
 | Supervisor activity log | `/var/log/supervisor/supervisord.log` |
 
 The image creates these log files as `root:www-data` with mode `0660` (default application GID `1000`), so the application processes can write their contents while their root-owned parent directory prevents file replacement. If you mount a host log directory, preserve equivalent permissions. PHP-FPM does not reopen `/proc/self/fd/2` for its logs.
 
-The default Supervisor configuration disables file rotation for all its logs, so use external log retention management. PHP/FPM and Supervisor share the PHP log files; keep `stderr_logfile_maxbytes=0` and `stdout_logfile_maxbytes=0` in every program sharing these paths in a mounted custom Supervisord file, including a cron program if it uses the same logs. Update any mounted Nginx, Supervisord, PHP, OPcache or PHP-FPM configuration to use the same paths as the defaults below.
+The default Supervisor configuration disables file rotation for all its logs, so use external log retention management. Nginx shares its error log with Supervisor, and PHP/FPM share the PHP log files with Supervisor; keep `stderr_logfile_maxbytes=0` and `stdout_logfile_maxbytes=0` in every program sharing these paths in a mounted custom Supervisord file, including a cron program if it uses the same logs. Update any mounted Nginx, Supervisord, PHP, OPcache or PHP-FPM configuration to use the same paths as the defaults below.
 
 ## Default configuration files
 
@@ -158,7 +157,7 @@ Source: [`src/nginx.conf`](src/nginx.conf)
 ```nginx
 user www-data;
 worker_processes auto;
-error_log               /var/log/supervisor/nginx.error.log warn;
+error_log               /var/log/supervisor/nginx.err.log warn;
 pid                     /var/run/nginx.pid;
 include /etc/nginx/modules-enabled/*.conf;
 
@@ -245,8 +244,8 @@ server {
     root /var/www/html;
     index index.php;
 
-    error_log  /var/log/supervisor/nginx.error.log warn;
-    access_log /var/log/supervisor/nginx.access.log;
+    error_log  /var/log/supervisor/nginx.err.log warn;
+    access_log /var/log/supervisor/nginx.out.log;
 
     server_tokens off;
 
@@ -307,12 +306,13 @@ user=www-data
 priority=1
 
 [program:nginx]
-command=/usr/sbin/nginx -e /var/log/supervisor/nginx.error.log -g "daemon off;"
+command=/usr/sbin/nginx -e /var/log/supervisor/nginx.err.log -g "daemon off;"
 numprocs=1
 autostart=true
 autorestart=true
 stderr_logfile=/var/log/supervisor/nginx.err.log
-stdout_logfile=/var/log/supervisor/nginx.out.log
+stdout_logfile=/var/log/supervisor/nginx.err.log
+; Nginx also writes errors directly to this file; keep rotation disabled.
 stderr_logfile_maxbytes=0
 stdout_logfile_maxbytes=0
 user=www-data

@@ -22,6 +22,7 @@ RUN case "$phpVersion" in \
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
+        apt-utils \
         ca-certificates \
         cron \
         curl \
@@ -46,7 +47,9 @@ RUN set -eux; \
         nano \
         nginx \
         openssh-server \
+        software-properties-common \
         sqlite3 \
+        sudo \
         supervisor \
         unzip \
         zip \
@@ -145,7 +148,6 @@ RUN set -eux; \
         /var/log/supervisor/supervisord.log \
         /var/log/supervisor/php-fpm.err.log \
         /var/log/supervisor/php-fpm.out.log \
-        /var/log/supervisor/nginx.error.log /var/log/supervisor/nginx.access.log \
         /var/log/supervisor/nginx.err.log /var/log/supervisor/nginx.out.log; do \
         touch "$path"; \
         chown "root:$(id -g "${USER_NAME}")" "$path"; \

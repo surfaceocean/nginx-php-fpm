@@ -51,7 +51,7 @@ echo 'Compiled extension smoke tests passed', PHP_EOL;
 PHP
 
 docker run --rm --platform "$platform" --entrypoint nginx "$image" \
-  -e /var/log/supervisor/nginx.error.log -t
+  -e /var/log/supervisor/nginx.err.log -t
 docker run --rm --platform "$platform" --entrypoint php-fpm "$image" -t
 docker run --rm --platform "$platform" --entrypoint sh "$image" -eu -c '
   [ ! -e /etc/nginx/conf.d/nginx-site.conf ]
@@ -109,6 +109,13 @@ expect_status() {
 check_php_logs() {
   local name=$1 marker=$2
   wait_for_http "$name" "/__build_probe.php?log_probe=$marker"
+  # Exercise Nginx's direct error writer without disturbing the running service.
+  if docker exec --user www-data "$name" nginx \
+    -e /var/log/supervisor/nginx.err.log -t -c "/tmp/smoke-missing-nginx-$marker.conf" \
+    > "$test_dir/nginx-log-probe.txt" 2>&1; then
+    echo "Nginx unexpectedly accepted a missing configuration: $name" >&2
+    return 1
+  fi
   docker exec --user www-data "$name" sh -eu -c '
     for path in /var/log/supervisor/php-fpm.err.log /var/log/supervisor/php-fpm.out.log; do
       [ -f "$path" ] && [ ! -L "$path" ] && [ -r "$path" ] && [ -w "$path" ]
@@ -120,7 +127,8 @@ check_php_logs() {
       grep -Fq "smoke-php-error-$1" /var/log/supervisor/php-fpm.err.log
       grep -Fq "smoke-php-worker-$1" /var/log/supervisor/php-fpm.err.log
       grep -Fq /__build_probe.php /var/log/supervisor/php-fpm.out.log
-      grep -Fq "log_probe=$1" /var/log/supervisor/nginx.access.log
+      grep -Fq "log_probe=$1" /var/log/supervisor/nginx.out.log
+      grep -Fq "smoke-missing-nginx-$1.conf" /var/log/supervisor/nginx.err.log
       grep -Fq "supervisord started with pid" /var/log/supervisor/supervisord.log
     ' sh "$marker"; then return 0; fi
     sleep 1
@@ -166,7 +174,6 @@ check_runtime_permissions() {
 
     for path in /var/log/supervisor/supervisord.log \
       /var/log/supervisor/php-fpm.err.log /var/log/supervisor/php-fpm.out.log \
-      /var/log/supervisor/nginx.access.log /var/log/supervisor/nginx.error.log \
       /var/log/supervisor/nginx.err.log /var/log/supervisor/nginx.out.log \
       /var/run/nginx.pid /var/run/supervisor/supervisord.pid; do
       [ -f "$path" ] && [ ! -L "$path" ] && [ -r "$path" ] && [ -w "$path" ]
@@ -319,7 +326,7 @@ docker exec --user www-data "$container" sh -eu -c '
   ! grep -Fq "smoke-legacy-nginx-main" /etc/nginx/nginx.conf
   ! grep -Fq "smoke-legacy-nginx-site" /etc/nginx/conf.d/nginx-site.conf
 '
-docker exec "$container" nginx -e /var/log/supervisor/nginx.error.log -t
+docker exec "$container" nginx -e /var/log/supervisor/nginx.err.log -t
 docker exec "$container" php-fpm -t
 
 # An existing active site must survive restart without regeneration or replacement.
@@ -354,8 +361,8 @@ server {
     listen 80 default_server;
     server_name _;
     root /var/www/html;
-    access_log /var/log/supervisor/nginx.access.log;
-    error_log /var/log/supervisor/nginx.error.log warn;
+    access_log /var/log/supervisor/nginx.out.log;
+    error_log /var/log/supervisor/nginx.err.log warn;
     location = /style.css { try_files $uri =404; }
     location = /__build_probe.php {
         include fastcgi_params;
@@ -409,7 +416,7 @@ check_runtime_permissions "$mounted_container"
 docker exec "$mounted_container" test -f /tmp/smoke-mounted-supervisor
 docker exec "$mounted_container" php-fpm -O -tt > "$test_dir/fpm-config.txt" 2>&1
 grep -F 'process.max = 16' "$test_dir/fpm-config.txt"
-docker exec "$mounted_container" nginx -e /var/log/supervisor/nginx.error.log -T \
+docker exec "$mounted_container" nginx -e /var/log/supervisor/nginx.err.log -T \
   > "$test_dir/mounted-nginx.conf" 2>&1
 grep -F 'smoke-mounted-nginx-main' "$test_dir/mounted-nginx.conf"
 grep -F 'smoke-mounted-nginx-site' "$test_dir/mounted-nginx.conf"
@@ -458,7 +465,7 @@ grep -Eq '^[[:space:]]*server_name example[.]test;[[:space:]]*$' "$test_dir/env-
 grep -Eq '^[[:space:]]*root /var/www/html/public;[[:space:]]*$' "$test_dir/env-site.conf"
 grep -F 'try_files $uri =404;' "$test_dir/env-site.conf"
 grep -F 'fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;' "$test_dir/env-site.conf"
-docker exec "$env_container" nginx -e /var/log/supervisor/nginx.error.log -t
+docker exec "$env_container" nginx -e /var/log/supervisor/nginx.err.log -t
 
 # A dangling active-site symlink must be rejected without touching it or its target.
 docker create --platform "$platform" --name "$invalid_container" --entrypoint sh \
