@@ -8,8 +8,8 @@ on:
     branches: [main]
     paths-ignore: [versions.json]
   schedule:
-    # Every day at 03:00 Asia/Shanghai (19:00 UTC the previous day).
-    - cron: '0 19 * * *'
+      - cron: '23 12 * * *'
+        timezone: 'Asia/Shanghai'
   workflow_dispatch:
 
 permissions:
