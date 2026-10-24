@@ -35,7 +35,7 @@ Only PHP 8.4 and PHP 8.5 are supported. Legacy Dockerfiles and build targets hav
 
 [Build workflow](.github/workflows/build.yml) runs:
 
-- Daily at **19:00 UTC**.
+- Daily at **04:23 UTC**.
 - On pushes to `main`, except changes only to `versions.json`.
 - Manually through **Actions → Build → Run workflow**.
 - On pull requests targeting `main`, for validation.
