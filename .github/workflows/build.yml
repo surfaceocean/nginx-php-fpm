@@ -8,7 +8,7 @@ on:
     branches: [main]
     paths-ignore: [versions.json]
   schedule:
-      - cron: '23 12 * * *'
+      - cron: '23 13 * * *'
         timezone: 'Asia/Shanghai'
   workflow_dispatch:
 
