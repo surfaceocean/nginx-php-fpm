@@ -1,4 +1,4 @@
-ARG phpVersion=8.5
+ARG phpVersion
 FROM php:${phpVersion}-fpm-trixie
 
 ARG phpVersion
@@ -13,11 +13,11 @@ ENV DOCUMENT_ROOT=${WORKDIR} \
     NODE_VERSION=${NODE_VERSION} \
     USER_NAME=www-data
 
-# Only the maintained PHP release lines are supported by this Dockerfile.
-RUN case "$phpVersion" in \
-        8.4|8.5) ;; \
-        *) echo "Unsupported PHP version: $phpVersion (use 8.4 or 8.5)" >&2; exit 1 ;; \
-    esac
+COPY php-versions.json /usr/local/share/php-versions.json
+COPY src/php-versions.php /usr/local/lib/php-versions.php
+
+# Callers select the base image from the shared configuration before Docker runs.
+RUN php -r 'require "/usr/local/lib/php-versions.php"; assertSupportedPhpSeries($argv[1]); if ((PHP_MAJOR_VERSION . "." . PHP_MINOR_VERSION) !== $argv[1]) { throw new RuntimeException("Base image PHP does not match the selected version."); }' "$phpVersion"
 
 RUN set -eux; \
     apt-get update; \
@@ -46,7 +46,6 @@ RUN set -eux; \
         libzip-dev \
         nano \
         nginx \
-        openssh-server \
         sqlite3 \
         sudo \
         supervisor \
@@ -76,7 +75,7 @@ RUN set -eux; \
     fi; \
     docker-php-ext-install -j"$(nproc)" $extensions
 
-# PHP 8.5 includes OPcache itself; the conditional above builds it only for 8.4.
+# Build OPcache only when the selected base image does not already provide it.
 COPY --from=ghcr.io/php/pie:bin /pie /usr/local/bin/pie
 
 # Resolve the latest compatible stable extension releases on each fresh build.

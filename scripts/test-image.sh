@@ -5,7 +5,8 @@ image=${1:?Usage: test-image.sh IMAGE PHP_SERIES PLATFORM}
 php_series=${2:?PHP series is required}
 platform=${3:?Platform is required}
 
-case "$php_series" in 8.4|8.5) ;; *) echo 'Only PHP 8.4 and 8.5 are supported' >&2; exit 1 ;; esac
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+php_series=$("${PYTHON:-python3}" "$script_dir/php_versions.py" --check "$php_series")
 case "$platform" in linux/amd64|linux/arm64) ;; *) echo 'Unsupported platform' >&2; exit 1 ;; esac
 actual_platform=$(docker image inspect "$image" --format '{{.Os}}/{{.Architecture}}')
 [[ "$actual_platform" == "$platform" ]]
@@ -20,6 +21,35 @@ function check(bool $ok, string $message): void {
     if (!$ok) { fwrite(STDERR, $message . PHP_EOL); exit(1); }
 }
 check(str_starts_with(PHP_VERSION, $argv[1] . '.'), 'Incorrect PHP release');
+require_once '/usr/local/lib/php-versions.php';
+assertSupportedPhpSeries($argv[1]);
+// Exercise the shared configuration parser independently of the installed PHP release.
+$configFixture = tempnam(sys_get_temp_dir(), 'php-versions-');
+check($configFixture !== false, 'Cannot create PHP version configuration fixture');
+try {
+    file_put_contents($configFixture, '["8.10", "8.6", "9.0", "8.5"]');
+    check(supportedPhpVersions($configFixture) === ['8.5', '8.6', '8.10', '9.0'], 'PHP version ordering must be numeric');
+    assertSupportedPhpSeries('8.6', $configFixture);
+    $rejected = false;
+    try {
+        assertSupportedPhpSeries('8.4', $configFixture);
+    } catch (RuntimeException $error) {
+        $rejected = true;
+    }
+    check($rejected, 'PHP version configuration must reject retired series');
+    foreach (['invalid JSON', '{}', '{"0":"8.5"}', '[]', '["8.5", "8.5"]', '["08.5"]', '["8.05"]', '[8.5]'] as $invalidConfig) {
+        file_put_contents($configFixture, $invalidConfig);
+        $rejected = false;
+        try {
+            supportedPhpVersions($configFixture);
+        } catch (RuntimeException | JsonException $error) {
+            $rejected = true;
+        }
+        check($rejected, 'Invalid PHP version configuration was accepted');
+    }
+} finally {
+    unlink($configFixture);
+}
 $required = ['mysqli', 'mysqlnd', 'pdo_mysql', 'apcu', 'sysvsem', 'gmp',
     'imagick', 'bz2', 'redis', 'pdo_pgsql', 'rdkafka', 'memcached', 'zip',
     'mbstring', 'exif', 'pcntl', 'bcmath', 'gd', 'intl', 'Zend OPcache'];

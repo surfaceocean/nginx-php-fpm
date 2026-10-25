@@ -7,9 +7,14 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import sys
+
+# Also support imports by the standalone test runner.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from php_versions import load_versions
 
 
-PHP_SERIES = ("8.4", "8.5")
+PHP_SERIES = load_versions(Path(__file__).resolve().parents[1] / "php-versions.json")
 PLATFORMS = ("linux/amd64", "linux/arm64")
 IMAGE = "docker.io/surfaceocean/nginx-php-fpm"
 REQUIRED_EXTENSIONS = {
@@ -42,7 +47,7 @@ def check_digest(digest, required=False):
 
 def check_runtime(runtime, series):
     if series not in PHP_SERIES:
-        raise ValueError("Only PHP 8.4 and 8.5 are supported")
+        raise ValueError("Supported PHP series: " + ", ".join(PHP_SERIES))
     if not isinstance(runtime, dict) or not re.fullmatch(
         re.escape(series) + r"\.\d+", str(runtime.get("php", ""))
     ):
@@ -108,7 +113,7 @@ def collect_records(directory, image):
 def publish_release(image, series, records):
     patch = records[0]["runtime"]["php"]
     tags = [f"{image}:{series}", f"{image}:php{series}", f"{image}:{patch}"]
-    if series == "8.5":
+    if series == PHP_SERIES[-1]:
         tags.append(f"{image}:latest")
     references = [f"{image}@{check_digest(record['digest'], required=True)}" for record in records]
     command = ["docker", "buildx", "imagetools", "create"]

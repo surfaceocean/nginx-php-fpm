@@ -3,12 +3,12 @@ name: Build
 on:
   push:
     branches: [main]
-    paths-ignore: [versions.json]
+    paths-ignore: [versions.json, README.md]
   pull_request:
     branches: [main]
-    paths-ignore: [versions.json]
+    paths-ignore: [versions.json, README.md]
   schedule:
-      - cron: '23 13 * * *'
+      - cron: '23 11 * * *'
         timezone: 'Asia/Shanghai'
   workflow_dispatch:
 
@@ -25,8 +25,37 @@ env:
   PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'surfaceocean/nginx-php-fpm' }}
 
 jobs:
+  configure:
+    name: Validate PHP version configuration
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      php: ${{ steps.versions.outputs.php }}
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Read configured PHP versions
+        id: versions
+        run: |
+          versions=$(python3 scripts/php_versions.py --json)
+          printf 'php=%s\n' "$versions" >> "$GITHUB_OUTPUT"
+
+      - name: Check version configuration and inventory validation
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+
+      - name: Check build and image test script syntax
+        run: |
+          bash -n build.sh
+          bash -n scripts/test-image.sh
+
   build:
     name: PHP ${{ matrix.php }} / ${{ matrix.arch }}
+    needs: configure
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-26.04-arm' || 'ubuntu-26.04' }}
     timeout-minutes: 120
     permissions:
@@ -34,7 +63,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        php: ['8.4', '8.5']
+        php: ${{ fromJSON(needs.configure.outputs.php) }}
         arch: [amd64, arm64]
     steps:
       - name: Check out sources
@@ -52,9 +81,6 @@ jobs:
             *) echo "Runner architecture $machine_arch does not match $TARGET_ARCH" >&2; exit 1 ;;
           esac
 
-      - name: Check version manifest validation
-        run: python3 -m unittest discover -s tests -p 'test_*.py'
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -68,6 +94,8 @@ jobs:
 
       - name: Build current PHP and extension releases
         uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_RECORD_RETENTION_DAYS: '7'
         with:
           context: .
           file: ./src/docker/Dockerfile
@@ -130,6 +158,8 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
+    outputs:
+      published: ${{ steps.publication.outputs.published }}
     steps:
       - name: Check out sources
         uses: actions/checkout@v7
@@ -157,6 +187,7 @@ jobs:
         if: env.PUBLISH == 'true'
         run: |
           git fetch origin main
+          git show origin/main:versions.json > previous-versions.json
           if git diff --quiet "$GITHUB_SHA" origin/main -- . ':!versions.json'; then
             echo 'current=true' >> "$GITHUB_OUTPUT"
           else
@@ -165,23 +196,29 @@ jobs:
           fi
 
       - name: Assemble release images and root versions.json
+        id: publication
         env:
           CURRENT_SOURCE: ${{ steps.source.outputs.current }}
         run: |
           args=()
+          published=false
           if [[ "$PUBLISH" == true && "$CURRENT_SOURCE" == true ]]; then
             args+=(--publish)
+            published=true
           fi
           python3 scripts/update-versions.py --records manifests --image "$IMAGE" \
             --source-sha "$GITHUB_SHA" --source-repository "$GITHUB_REPOSITORY" \
             --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --output versions.json "${args[@]}"
+          echo "published=$published" >> "$GITHUB_OUTPUT"
 
       - name: Upload root versions.json
         uses: actions/upload-artifact@v7
         with:
           name: versions
-          path: versions.json
+          path: |
+            versions.json
+            previous-versions.json
           if-no-files-found: error
           retention-days: 90
 
@@ -206,3 +243,39 @@ jobs:
           git commit -m 'chore: record built component versions [skip ci]'
           # A concurrent main update causes a safe, non-forced rejection.
           git push origin HEAD:main
+
+  cleanup:
+    name: Clean temporary tags and unreferenced images
+    needs: publish
+    if: needs.publish.outputs.published == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out cleanup scripts and complete inventory history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download published and previous version inventories
+        uses: actions/download-artifact@v8
+        with:
+          name: versions
+          path: published
+
+      - name: Collect all recorded historical image digests
+        run: |
+          python3 scripts/collect-dockerhub-digests.py --image "$IMAGE" \
+            --output published/historical-digests.json
+
+      - name: Remove temporary tags and known unreferenced images
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          python3 scripts/cleanup-dockerhub.py --image "$IMAGE" \
+            --versions published/versions.json \
+            --previous-versions published/previous-versions.json \
+            --known-digests published/historical-digests.json --delete

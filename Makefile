@@ -1,16 +1,18 @@
+SHELL := bash
 IMAGE_NAME ?= docker.io/surfaceocean/nginx-php-fpm
-export IMAGE_NAME
+PYTHON ?= python3
+export IMAGE_NAME PYTHON
 
-.PHONY: all build build-84 build-85
+.PHONY: all build FORCE
 all: build
 
-# Run serially so both builds can safely update the shared versions.json.
+# Run serially so every build can safely update the shared versions.json.
 build:
-	bash ./build.sh 8.4
-	bash ./build.sh 8.5
+	@set -eu; versions=$$("$(PYTHON)" scripts/php_versions.py --list); \
+	for version in $$versions; do bash ./build.sh "$$version"; done
 
-build-84:
-	bash ./build.sh 8.4
+# Examples: make build-8.5 or make build-latest.
+build-%: FORCE
+	bash ./build.sh "$*"
 
-build-85:
-	bash ./build.sh 8.5
+FORCE:

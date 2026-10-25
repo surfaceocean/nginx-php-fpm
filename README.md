@@ -15,11 +15,12 @@ Images are published to Docker Hub at **`docker.io/<DOCKERHUB_USERNAME>/nginx-ph
 
 | Tag | PHP series |
 | --- | --- |
-| `8.4` | Latest stable PHP 8.4 patch available in the official PHP base image |
-| `8.5` | Latest stable PHP 8.5 patch available in the official PHP base image |
-| `latest` | Same image as `8.5` |
+| `<major>.<minor>` | Latest stable patch available in the official PHP base image for each configured series |
+| `php<major>.<minor>` | Alias for the corresponding series tag |
+| `<major>.<minor>.<patch>` | Latest published build of that exact PHP patch; historical patch tags are retained |
+| `latest` | Highest configured PHP series, compared numerically |
 
-Only PHP 8.4 and PHP 8.5 are supported. Legacy Dockerfiles and build targets have been removed.
+Supported PHP series are defined only in [`php-versions.json`](php-versions.json). To add or remove a series, edit this JSON array; CI, local builds, image validation and version inventories all read it. The order of entries does not matter: `latest` and the default local build always select the highest numeric version. A new series must be available as an official `php:<series>-fpm-trixie` image and pass the extension and service tests before publication. Removing a series stops new builds; its existing Docker Hub release tags and referenced images remain protected by cleanup.
 
 ## Included software
 
@@ -27,7 +28,7 @@ Only PHP 8.4 and PHP 8.5 are supported. Legacy Dockerfiles and build targets hav
 - Node.js 24 LTS and npm.
 - Administration tools: `sudo` and `apt-utils`.
 - PHP extensions: `mysqli`, `mysqlnd`, `pdo_mysql`, `pdo_pgsql`, `apcu`, `sysvsem`, `gmp`, `imagick`, `bz2`, `redis`, `rdkafka`, `memcached`, `zip`, `mbstring`, `exif`, `pcntl`, `bcmath`, `gd`, `intl` and OPcache, alongside the extensions provided by the official PHP image.
-- MySQL extensions use the base image's built-in `mysqlnd` driver. OPcache is compiled separately for PHP 8.4 and is built into PHP 8.5.
+- MySQL extensions use the base image's built-in `mysqlnd` driver. OPcache is compiled only when it is not already included in the base image.
 - External extensions (`apcu`, `imagick`, `memcached`, `redis` and `rdkafka`) are compiled from the latest compatible stable releases using [PIE](https://github.com/php/pie) during each fresh build. The official `ghcr.io/php/pie:bin` image supplies the installer. PHP's bundled extensions continue to use `docker-php-ext-install`. Exact installed versions are recorded after building.
 
 
@@ -36,13 +37,18 @@ Only PHP 8.4 and PHP 8.5 are supported. Legacy Dockerfiles and build targets hav
 [Build workflow](.github/workflows/build.yml) runs:
 
 - Daily.
-- On pushes to `main`, except changes only to `versions.json`.
+- On pushes to `main`, except changes limited to `README.md` and `versions.json`.
 - Manually through **Actions → Build → Run workflow**.
-- On pull requests targeting `main`, for validation.
+- On pull requests targeting `main`, with the same file exclusions, for validation.
 
-Each PHP version and architecture is built and tested before the release tags are published. AMD64 jobs run natively on `ubuntu-26.04`; ARM64 jobs run natively on `ubuntu-26.04-arm`. Each job verifies the runner architecture before building, and QEMU is not required. The publication job also runs on `ubuntu-26.04`. If any matrix build job fails, the remaining running or queued matrix jobs are cancelled and release publication is skipped. Scheduled builds refresh the base images and compile extensions without reusing old build layers. Docker Hub publishing uses the existing `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` Actions secrets. The repository's built-in `GITHUB_TOKEN` has `contents: write` only in the publication job so it can commit `versions.json`.
+CI validates `php-versions.json` and uses it to generate the PHP build matrix. Each configured PHP version and architecture is built and tested before the release tags are published. AMD64 jobs run natively on `ubuntu-26.04`; ARM64 jobs run natively on `ubuntu-26.04-arm`. Each job verifies the runner architecture before building, and QEMU is not required. The publication job also runs on `ubuntu-26.04`. If any matrix build job fails, the remaining running or queued matrix jobs are cancelled and release publication is skipped. Scheduled builds refresh the base images and compile extensions without reusing old build layers. Docker Hub publishing uses the existing `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` Actions secrets. The repository's built-in `GITHUB_TOKEN` has `contents: write` only in the publication job so it can commit `versions.json`.
 
-After each successful image publication, the workflow generates **[`versions.json`](versions.json)** in the repository root and commits any changes to `main` when the build source is still current. The file records actual PHP patch versions, every loaded PHP extension's version, tools, linked libraries and image digests, separately for PHP 8.4/8.5 and each architecture. Values come from the built images. Inventory-only commits do not trigger another build.
+After each successful image publication, the workflow generates **[`versions.json`](versions.json)** in the repository root and commits any changes to `main` when the build source is still current. The file records actual PHP patch versions, every loaded PHP extension's version, tools, linked libraries and image digests, separately for every configured PHP series and architecture. Values come from the built images. Inventory-only commits do not trigger another build.
+
+After successful publication, a separate cleanup job removes temporary `build-*` tags generated by this workflow, including those left by earlier failed builds. Historical PHP patch tags such as `8.4.6` and `8.5.11` are retained, together with their multi-architecture indexes and architecture images. Rebuilding the same patch updates its existing tag; the replaced image is eligible for cleanup only when no retained tag or image references it. All other tags and their referenced images are preserved.
+
+Cleanup checks every historical `versions.json` in Git, the previous published inventory and the temporary tags for known image digests. It deletes unreferenced manifests in that recorded history, including leftovers from earlier publications. Docker Hub's [public APIs](https://docs.docker.com/reference/api/hub/latest/) do not provide a full list of historical untagged manifests, so images whose digests cannot be recovered from these inventories or remaining temporary tags cannot be discovered automatically with the Actions secrets. This also applies to temporary images left untagged by an interrupted cleanup if their digests were not committed in an inventory. Remove these remaining historical images through Docker Hub's [Image Management](https://docs.docker.com/docker-hub/repos/manage/hub-images/manage/) page. Layers shared with retained images remain in use; Docker Hub manages storage reclamation.
+
 
 GitHub automatically disables scheduled workflows in public repositories after [60 days of repository inactivity](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
 
@@ -57,11 +63,11 @@ docker run --rm --entrypoint php docker.io/surfaceocean/nginx-php-fpm:8.5 \
 Enable GitHub Actions in the repository's **Actions** tab and configure these repository Actions secrets if they are not already present:
 
 - `DOCKERHUB_USERNAME`: the Docker Hub account that owns the `nginx-php-fpm` repository.
-- `DOCKERHUB_TOKEN`: a Docker Hub access token with permission to push to that repository.
+- `DOCKERHUB_TOKEN`: a Docker Hub access token with **Read, Write and Delete** permissions for image publication and cleanup.
 
 Push these changes to `main` and run **Build** once if needed. Repository policies must allow the bot's `versions.json` commit. If `main` requires pull requests for every change, configure an appropriate bypass for the publishing bot.
 
-Docker Hub publication and automatic version commits are enabled only for `surfaceocean/nginx-php-fpm`. Forks must update the repository checks in the build workflow before publishing.
+Docker Hub publication, automatic version commits and image cleanup are enabled only for `surfaceocean/nginx-php-fpm`. Forks must update the repository checks in the build workflow before publishing.
 
 ## Run the image
 
@@ -511,12 +517,16 @@ OPcache timestamp validation is disabled by default. Restart the container after
 Bash, Docker and Python 3.9+ are required for scripted local builds; `make` is optional. Run from the repository root:
 
 ```sh
-bash ./build.sh 8.4
+# Build a specific configured series.
 bash ./build.sh 8.5
-# Defaults to PHP 8.5; "latest" is also accepted.
+# Both commands select the highest configured series.
 bash ./build.sh
-# Build both supported versions in order.
+bash ./build.sh latest
+# Build every configured series in numeric order, one at a time.
 make build
+# Build one configured series or the highest one through Make.
+make build-8.5
+make build-latest
 ```
 
 The script builds for the local Docker platform and updates the corresponding entry in the root `versions.json`. A local build has no published registry digest. `IMAGE_NAME` overrides the default image name and `PYTHON` can select a Python executable:
@@ -528,11 +538,12 @@ IMAGE_NAME=local/nginx-php-fpm bash ./build.sh 8.5
 For a direct Docker build:
 
 ```sh
-docker build --pull --build-arg phpVersion=8.5 \
-  -f src/docker/Dockerfile -t docker.io/surfaceocean/nginx-php-fpm:8.5 .
+php_version=$(python3 scripts/php_versions.py --latest)
+docker build --pull --build-arg "phpVersion=$php_version" \
+  -f src/docker/Dockerfile -t "docker.io/surfaceocean/nginx-php-fpm:$php_version" .
 ```
 
-Use `build.sh` to also update the repository inventory. Both build entry points reject unsupported PHP series.
+Direct Docker builds require the `phpVersion` build argument. Use `build.sh` to select the configured default, tag it as `latest` when applicable and update the repository inventory. Both build entry points reject PHP series absent from `php-versions.json`. The image keeps its copy of this configuration at `/usr/local/share/php-versions.json`.
 
 ## Extending the image
 

@@ -39,9 +39,8 @@ function nativePackageVersion(string $package): string
 }
 
 try {
-    if (!in_array(PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION, ['8.4', '8.5'], true)) {
-        throw new RuntimeException('Only PHP 8.4 and PHP 8.5 are supported.');
-    }
+    require_once '/usr/local/lib/php-versions.php';
+    assertSupportedPhpSeries(PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION);
 
     $required = [
         'apcu', 'bcmath', 'bz2', 'exif', 'gd', 'gmp', 'imagick', 'intl',

@@ -4,16 +4,9 @@ set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
 if [ "$#" -gt 1 ]; then
-    echo "Usage: ./build.sh [8.4|8.5|latest]" >&2
+    echo "Usage: ./build.sh [PHP_SERIES|latest]" >&2
     exit 1
 fi
-
-php_version="${1:-8.5}"
-case "$php_version" in
-    latest) php_version=8.5 ;;
-    8.4|8.5) ;;
-    *) echo "Supported PHP versions: 8.4, 8.5 (latest)." >&2; exit 1 ;;
-esac
 
 python_command="${PYTHON:-}"
 if [ -z "$python_command" ]; then
@@ -29,11 +22,14 @@ if [ -z "$python_command" ]; then
     exit 1
 fi
 
+php_version=$("$python_command" scripts/php_versions.py --check "${1:-latest}")
+latest_php=$("$python_command" scripts/php_versions.py --latest)
+
 image_name="${IMAGE_NAME:-docker.io/surfaceocean/nginx-php-fpm}"
 image="$image_name:$php_version"
 docker build --pull --build-arg "phpVersion=$php_version" \
     -f src/docker/Dockerfile -t "$image" .
-if [ "$php_version" = 8.5 ]; then
+if [ "$php_version" = "$latest_php" ]; then
     docker tag "$image" "$image_name:latest"
 fi
 

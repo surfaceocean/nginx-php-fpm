@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("versions", ROOT / "scripts/update-versions.py")
 versions = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(versions)
+CONFIGURED_SERIES = versions.PHP_SERIES
 
 
 def runtime(series="8.5", patch_number=1):
@@ -42,6 +43,10 @@ def matrix():
 
 class InventoryTests(unittest.TestCase):
     def setUp(self):
+        # These fixed scenarios are independent of future edits to the supported list.
+        configured = patch.object(versions, "PHP_SERIES", ("8.4", "8.5"))
+        configured.start()
+        self.addCleanup(configured.stop)
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)
@@ -149,6 +154,26 @@ class InventoryTests(unittest.TestCase):
             self.assertIn(versions.IMAGE + "@" + record["digest"], run.call_args.args[0])
         self.assertEqual(digest, descriptor["digest"])
 
+    def test_matrix_and_latest_follow_replacement_and_single_version_configurations(self):
+        for supported in (("8.5", "8.6"), ("8.9", "8.10"), ("8.6",)):
+            with self.subTest(supported=supported), patch.object(versions, "PHP_SERIES", supported):
+                records = matrix()
+                result = versions.document(records, versions.IMAGE)
+                self.assertEqual(set(result["releases"]), set(supported))
+                self.assertEqual(len(records), len(supported) * len(versions.PLATFORMS))
+                with self.assertRaises(ValueError):
+                    versions.make_record(runtime("8.4"), "8.4", "linux/amd64", versions.IMAGE)
+                for series in supported:
+                    selected = [r for (php, _), r in records.items() if php == series]
+                    descriptor = {"digest": "sha256:" + "a" * 64, "manifests": [
+                        {"platform": {"os": "linux", "architecture": r["platform"].split("/")[1]},
+                         "digest": r["digest"]} for r in selected]}
+                    with patch.object(versions.subprocess, "run"), patch.object(
+                        versions.subprocess, "check_output", return_value=json.dumps(descriptor)
+                    ):
+                        tags, _ = versions.publish_release(versions.IMAGE, series, selected)
+                    self.assertEqual(versions.IMAGE + ":latest" in tags, series == supported[-1])
+
     def test_registry_manifest_must_match_tested_architectures(self):
         selected = [r for (series, _), r in matrix().items() if series == "8.4"]
         with patch.object(versions.subprocess, "run"), patch.object(
@@ -184,12 +209,13 @@ class InventoryTests(unittest.TestCase):
         original = '{"previous": "successful build"}\n'
         output.write_text(original, encoding="utf-8")
         manifest = self.directory / "runtime.json"
-        value = runtime()
+        series = CONFIGURED_SERIES[-1]
+        value = runtime(series)
         del value["extensions"]["pdo_pgsql"]
         versions.write_json(manifest, value)
         result = subprocess.run(
             [sys.executable, str(ROOT / "scripts/update-versions.py"), "--local-manifest",
-             str(manifest), "--php", "8.5", "--platform", "linux/amd64", "--output", str(output)],
+             str(manifest), "--php", series, "--platform", "linux/amd64", "--output", str(output)],
             capture_output=True, text=True,
         )
         self.assertNotEqual(result.returncode, 0)
