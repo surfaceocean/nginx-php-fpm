@@ -25,7 +25,7 @@ Supported PHP series are defined only in [`php-versions.json`](php-versions.json
 ## Included software
 
 - Nginx, PHP-FPM, ImageMagick, Supervisord, Cron, Composer and PIE.
-- Node.js 24 LTS and npm.
+- Node.js and its bundled npm from the [NodeSource LTS channel](https://github.com/nodesource/distributions/blob/master/scripts/deb/setup_lts.x). Each fresh build follows the LTS major version selected by NodeSource; actual installed versions are recorded in `versions.json`.
 - Administration tools: `sudo` and `apt-utils`.
 - PHP extensions: `mysqli`, `mysqlnd`, `pdo_mysql`, `pdo_pgsql`, `apcu`, `sysvsem`, `gmp`, `imagick`, `bz2`, `redis`, `rdkafka`, `memcached`, `zip`, `mbstring`, `exif`, `pcntl`, `bcmath`, `gd`, `intl` and OPcache, alongside the extensions provided by the official PHP image.
 - MySQL extensions use the base image's built-in `mysqlnd` driver. OPcache is compiled only when it is not already included in the base image.

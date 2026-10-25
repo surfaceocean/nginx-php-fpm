@@ -3,7 +3,7 @@ FROM php:${phpVersion}-fpm-trixie
 
 ARG phpVersion
 ARG WORKDIR=/var/www/html
-ARG NODE_VERSION=24.x
+ARG NODE_VERSION=lts.x
 ARG GROUP_ID=1000
 ARG USER_ID=1000
 ARG GROUP_NAME=www-data
