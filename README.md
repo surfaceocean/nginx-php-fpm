@@ -2,7 +2,7 @@
 
 Nginx and PHP-FPM in one container, maintained by [surfaceocean](https://github.com/surfaceocean/nginx-php-fpm), based on [jkaninda/nginx-php-fpm](https://github.com/jkaninda/nginx-php-fpm).
 
-[![Build](https://github.com/surfaceocean/nginx-php-fpm/actions/workflows/build.yml/badge.svg)](https://github.com/surfaceocean/nginx-php-fpm/actions/workflows/build.yml)
+[![Build](https://github.com/surfaceocean/nginx-php-fpm/actions/workflows/build.yml/badge.svg)](https://github.com/surfaceocean/nginx-php-fpm/actions/workflows/build.yml) [![PHP versions](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fsurfaceocean%2Fnginx-php-fpm%2Fmain%2Fphp-versions.json&query=%24%5B%2A%5D&label=PHP&color=777BB4&logo=php)](php-versions.json) [![Docker Pulls](https://img.shields.io/docker/pulls/surfaceocean/nginx-php-fpm?logo=docker)](https://hub.docker.com/r/surfaceocean/nginx-php-fpm)
 
 ## **Links**
 
