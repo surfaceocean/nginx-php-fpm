@@ -46,6 +46,8 @@ RUN set -eux; \
         libzip-dev \
         nano \
         nginx \
+        procps \
+        psmisc \
         sqlite3 \
         sudo \
         supervisor \
