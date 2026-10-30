@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "image": "docker.io/surfaceocean/nginx-php-fpm",
-  "generated_at": "2026-10-29T16:28:33Z",
+  "generated_at": "2026-10-30T10:15:58Z",
   "source": {
     "repository": "surfaceocean/nginx-php-fpm",
-    "commit": "a431c1df4fba9704678f9f94de4f41472427b8be",
-    "run_id": "40911022042",
+    "commit": "bc783cbeeb37c496d025ba26eac044ae1e4bc53e",
+    "run_id": "41038849053",
     "run_attempt": "1"
   },
   "releases": {
@@ -17,7 +17,7 @@
         "docker.io/surfaceocean/nginx-php-fpm:php8.4",
         "docker.io/surfaceocean/nginx-php-fpm:8.4.27"
       ],
-      "digest": "sha256:6fadc3107aec3991867fc884aaea384fda1fd073986db9a0e05370c818d1c1f2",
+      "digest": "sha256:dafb948b45feb0fd779241abe599bd27f4a512fb3d37ed35b923199e37aedd5c",
       "platforms": {
         "linux/amd64": {
           "php": "8.4.27",
@@ -75,7 +75,7 @@
             "zlib": "8.4.27"
           },
           "tools": {
-            "composer": "2.10.3",
+            "composer": "2.11.0",
             "nginx": "1.26.3",
             "node": "24.22.2",
             "npm": "11.19.1"
@@ -98,7 +98,7 @@
             "libgmp-dev": "2:6.3.0+dfsg-3",
             "libicu-dev": "76.1-4",
             "libjpeg62-turbo-dev": "1:2.1.5-4",
-            "libmagickwand-dev": "8:7.1.1.43+dfsg1-1+deb13u12",
+            "libmagickwand-dev": "8:7.1.1.43+dfsg1-1+deb13u13",
             "libmemcached-dev": "1.1.4-1.1+b2",
             "libonig-dev": "6.9.9-1+b1",
             "libpng-dev": "1.6.48-1+deb13u6",
@@ -109,7 +109,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+b1"
           },
-          "digest": "sha256:dd7ce7ae42cac2ab98b4f10bbe86e9ec29ce9b6ce24b9b9f9ba76e80860d294d"
+          "digest": "sha256:2f7529292946b3432b47a49458248d93ea3a0b58f86a558b493bbd85f3b6cfe6"
         },
         "linux/arm64": {
           "php": "8.4.27",
@@ -167,7 +167,7 @@
             "zlib": "8.4.27"
           },
           "tools": {
-            "composer": "2.10.3",
+            "composer": "2.11.0",
             "nginx": "1.26.3",
             "node": "24.22.2",
             "npm": "11.19.1"
@@ -190,7 +190,7 @@
             "libgmp-dev": "2:6.3.0+dfsg-3",
             "libicu-dev": "76.1-4",
             "libjpeg62-turbo-dev": "1:2.1.5-4",
-            "libmagickwand-dev": "8:7.1.1.43+dfsg1-1+deb13u12",
+            "libmagickwand-dev": "8:7.1.1.43+dfsg1-1+deb13u13",
             "libmemcached-dev": "1.1.4-1.1+b2",
             "libonig-dev": "6.9.9-1+b1",
             "libpng-dev": "1.6.48-1+deb13u6",
@@ -201,7 +201,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+b1"
           },
-          "digest": "sha256:9ed266930d55539c1e084357b43fdbc50ca130f18f1efc8b976fc521333478cf"
+          "digest": "sha256:984b7b15e9bd9e8ed915856284f27b667df41aeb21d36356beea65c758bfb6f0"
         }
       }
     },
@@ -214,7 +214,7 @@
         "docker.io/surfaceocean/nginx-php-fpm:8.5.12",
         "docker.io/surfaceocean/nginx-php-fpm:latest"
       ],
-      "digest": "sha256:d0399785e05ac7a5085313f1ff3598f367964b39aa2700c9d8a4ce61d33734fd",
+      "digest": "sha256:95ef2bee55d90faf2d25ae523b0b829ea667cf12519bca1880c9abd15cdbcf16",
       "platforms": {
         "linux/amd64": {
           "php": "8.5.12",
@@ -274,7 +274,7 @@
             "zlib": "8.5.12"
           },
           "tools": {
-            "composer": "2.10.3",
+            "composer": "2.11.0",
             "nginx": "1.26.3",
             "node": "24.22.2",
             "npm": "11.19.1"
@@ -297,7 +297,7 @@
             "libgmp-dev": "2:6.3.0+dfsg-3",
             "libicu-dev": "76.1-4",
             "libjpeg62-turbo-dev": "1:2.1.5-4",
-            "libmagickwand-dev": "8:7.1.1.43+dfsg1-1+deb13u12",
+            "libmagickwand-dev": "8:7.1.1.43+dfsg1-1+deb13u13",
             "libmemcached-dev": "1.1.4-1.1+b2",
             "libonig-dev": "6.9.9-1+b1",
             "libpng-dev": "1.6.48-1+deb13u6",
@@ -308,7 +308,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+b1"
           },
-          "digest": "sha256:054a46603c46deea43cccc6bcba70e84825efd18a64d8bca3951421b93c4ca60"
+          "digest": "sha256:f9bd8cce2cad874e67afc9ed0bfb64211d23ca7e7f1ae72b5b28d527e7a95c4d"
         },
         "linux/arm64": {
           "php": "8.5.12",
@@ -368,7 +368,7 @@
             "zlib": "8.5.12"
           },
           "tools": {
-            "composer": "2.10.3",
+            "composer": "2.11.0",
             "nginx": "1.26.3",
             "node": "24.22.2",
             "npm": "11.19.1"
@@ -391,7 +391,7 @@
             "libgmp-dev": "2:6.3.0+dfsg-3",
             "libicu-dev": "76.1-4",
             "libjpeg62-turbo-dev": "1:2.1.5-4",
-            "libmagickwand-dev": "8:7.1.1.43+dfsg1-1+deb13u12",
+            "libmagickwand-dev": "8:7.1.1.43+dfsg1-1+deb13u13",
             "libmemcached-dev": "1.1.4-1.1+b2",
             "libonig-dev": "6.9.9-1+b1",
             "libpng-dev": "1.6.48-1+deb13u6",
@@ -402,7 +402,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+b1"
           },
-          "digest": "sha256:80bedc1d3c09b5a5f9cfd9e615920159b03ede820fbf05ac8a64fb86291177db"
+          "digest": "sha256:65373fe0c4d80e7c1b94433792b4e74739f5fd691d9373707a0546a5f7a8a655"
         }
       }
     }
