@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "image": "docker.io/surfaceocean/nginx-php-fpm",
-  "generated_at": "2026-11-04T16:28:41Z",
+  "generated_at": "2026-11-05T11:13:06Z",
   "source": {
     "repository": "surfaceocean/nginx-php-fpm",
-    "commit": "8c97332fd6d37dec3737db9747dd2bbdef4b99c7",
-    "run_id": "41866672070",
+    "commit": "bf6b72d62f3c230996629b28f42d01fe8bef0f53",
+    "run_id": "42016429814",
     "run_attempt": "1"
   },
   "releases": {
@@ -17,7 +17,7 @@
         "docker.io/surfaceocean/nginx-php-fpm:php8.4",
         "docker.io/surfaceocean/nginx-php-fpm:8.4.27"
       ],
-      "digest": "sha256:d0bdbd398d4a6668829b752fec4928a193a550a834b18ae38e133e4a11f18ed1",
+      "digest": "sha256:8ce45c2966d303299498de7994ed166c68496a9624fbf7e5676b455f39d73b6d",
       "platforms": {
         "linux/amd64": {
           "php": "8.4.27",
@@ -98,7 +98,7 @@
             "libgmp-dev": "2:6.3.0+dfsg-3",
             "libicu-dev": "76.1-4",
             "libjpeg62-turbo-dev": "1:2.1.5-4",
-            "libmagickwand-dev": "8:7.1.1.43+dfsg1-1+deb13u13",
+            "libmagickwand-dev": "8:7.1.1.43+dfsg1-1+deb13u14",
             "libmemcached-dev": "1.1.4-1.1+b2",
             "libonig-dev": "6.9.9-1+b1",
             "libpng-dev": "1.6.48-1+deb13u6",
@@ -109,7 +109,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+b1"
           },
-          "digest": "sha256:97970fd02dc91d822f1630e66ba0528aae6f8570e5f422a8b32429d76ca5df30"
+          "digest": "sha256:bc9661f909f970327bf5940469ec6648c130014b891e52be1dab2579a9f52b96"
         },
         "linux/arm64": {
           "php": "8.4.27",
@@ -190,7 +190,7 @@
             "libgmp-dev": "2:6.3.0+dfsg-3",
             "libicu-dev": "76.1-4",
             "libjpeg62-turbo-dev": "1:2.1.5-4",
-            "libmagickwand-dev": "8:7.1.1.43+dfsg1-1+deb13u13",
+            "libmagickwand-dev": "8:7.1.1.43+dfsg1-1+deb13u14",
             "libmemcached-dev": "1.1.4-1.1+b2",
             "libonig-dev": "6.9.9-1+b1",
             "libpng-dev": "1.6.48-1+deb13u6",
@@ -201,7 +201,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+b1"
           },
-          "digest": "sha256:43db84b05593290a9a657e61e075852f8c4dd5f7ac9556bcf55f8afcc44924b7"
+          "digest": "sha256:12e517789b9f19a94f394d6918d63062f2df7806c6eedb6517e93cc80eb4781a"
         }
       }
     },
@@ -214,7 +214,7 @@
         "docker.io/surfaceocean/nginx-php-fpm:8.5.12",
         "docker.io/surfaceocean/nginx-php-fpm:latest"
       ],
-      "digest": "sha256:6ee86245bd58acfec531fd5e84519e92b9a432ba4f2c355f961c0614a670df1e",
+      "digest": "sha256:a47a767a0707730ff1a8c96564390a19620693c13e961cc3c2056b62871390a0",
       "platforms": {
         "linux/amd64": {
           "php": "8.5.12",
@@ -297,7 +297,7 @@
             "libgmp-dev": "2:6.3.0+dfsg-3",
             "libicu-dev": "76.1-4",
             "libjpeg62-turbo-dev": "1:2.1.5-4",
-            "libmagickwand-dev": "8:7.1.1.43+dfsg1-1+deb13u13",
+            "libmagickwand-dev": "8:7.1.1.43+dfsg1-1+deb13u14",
             "libmemcached-dev": "1.1.4-1.1+b2",
             "libonig-dev": "6.9.9-1+b1",
             "libpng-dev": "1.6.48-1+deb13u6",
@@ -308,7 +308,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+b1"
           },
-          "digest": "sha256:3f9ceb09bc29469e360b2bbb6707b2d10a47aa83e07a56d93efed44c8166c648"
+          "digest": "sha256:fd353f16ba2d43135a8f08faf258c0fec5db178db20b8572efeaaa3fb27fd8b8"
         },
         "linux/arm64": {
           "php": "8.5.12",
@@ -391,7 +391,7 @@
             "libgmp-dev": "2:6.3.0+dfsg-3",
             "libicu-dev": "76.1-4",
             "libjpeg62-turbo-dev": "1:2.1.5-4",
-            "libmagickwand-dev": "8:7.1.1.43+dfsg1-1+deb13u13",
+            "libmagickwand-dev": "8:7.1.1.43+dfsg1-1+deb13u14",
             "libmemcached-dev": "1.1.4-1.1+b2",
             "libonig-dev": "6.9.9-1+b1",
             "libpng-dev": "1.6.48-1+deb13u6",
@@ -402,7 +402,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+b1"
           },
-          "digest": "sha256:f67db75c13d75c20c66f803a347ef2ce3f3c915ade0279e6dc25e4fac8b70a7f"
+          "digest": "sha256:e25e94ee1bf256926bd08e39bd4d4e1e8ed1c0035c8789971b5ddc691f30129b"
         }
       }
     }
