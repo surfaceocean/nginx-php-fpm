@@ -27,12 +27,20 @@ else
   info "Generated default $NGINX_SITE_CONF"
 fi
 
-# Root Supervisor removes its PID on shutdown; restore the fixed writable file
-# inside its protected directory before the default Supervisor drops privileges.
 if [ "$(id -u)" -eq 0 ]; then
+  application_gid=$(id -g www-data)
+  # Repair existing and rotated logs, including files in mounted directories.
+  chown "root:$application_gid" /var/log/supervisor
+  chmod 2755 /var/log/supervisor
+  find /var/log/supervisor -type f \
+    -exec chown "root:$application_gid" {} + -exec chmod 660 {} +
+
+  # Root Supervisor removes its PID on shutdown; restore it before dropping privileges.
   touch /var/run/supervisor/supervisord.pid
-  chown "root:$(id -g www-data)" /var/run/supervisor/supervisord.pid
+  chown "root:$application_gid" /var/run/supervisor/supervisord.pid
   chmod 660 /var/run/supervisor/supervisord.pid
 fi
 
+# Preserve group write access for logs created by foreground Supervisor.
+umask 0007
 exec supervisord -c /etc/supervisor/supervisord.conf

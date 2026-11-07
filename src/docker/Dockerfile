@@ -139,10 +139,12 @@ RUN set -eux; \
         /var/lib/nginx /var/run/supervisor; \
     chown -R "${USER_NAME}:${GROUP_NAME}" \
         "${WORKDIR}" /var/cache/nginx /var/lib/nginx; \
-    chown root:root /var/log /var/log/supervisor \
+    chown root:root /var/log \
         /etc/nginx/conf.d /var/run/supervisor /tmp; \
-    chmod 755 /var/log /var/log/supervisor \
+    chmod 755 /var/log \
         /etc/nginx/conf.d /var/run/supervisor; \
+    chown "root:$(id -g "${USER_NAME}")" /var/log/supervisor; \
+    chmod 2755 /var/log/supervisor; \
     chmod 1777 /tmp; \
     for path in /var/run/nginx.pid /var/run/supervisor/supervisord.pid \
         /var/log/supervisor/supervisord.log \

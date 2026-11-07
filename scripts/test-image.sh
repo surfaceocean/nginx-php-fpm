@@ -169,6 +169,8 @@ check_php_logs() {
 
 check_runtime_permissions() {
   local name=$1
+  shift
+  docker exec "$name" grep -Eq '^Umask:[[:space:]]+0007$' /proc/1/status
   # This root fixture must survive operations by the application account in /tmp.
   docker exec "$name" sh -eu -c '
     printf "smoke-root-sticky\n" > /tmp/smoke-root-sticky
@@ -188,7 +190,11 @@ check_runtime_permissions() {
     printf "smoke-replacement\n" > "$replacement"
     for path in /var/www /var/log /var/log/supervisor \
       /etc/nginx/conf.d /var/run/supervisor; do
-      [ "$(stat -c %u:%g:%a "$path")" = 0:0:755 ]
+      case "$path" in
+        /var/log/supervisor) expected=0:1000:2755 ;;
+        *) expected=0:0:755 ;;
+      esac
+      [ "$(stat -c %u:%g:%a "$path")" = "$expected" ]
       [ ! -w "$path" ]
       expect_denied sh -c '\''printf "unexpected\n" > "$1/.smoke-unexpected"'\'' sh "$path"
       expect_denied mkdir "$path/.smoke-unexpected-dir"
@@ -205,7 +211,7 @@ check_runtime_permissions() {
     for path in /var/log/supervisor/supervisord.log \
       /var/log/supervisor/php-fpm.err.log /var/log/supervisor/php-fpm.out.log \
       /var/log/supervisor/nginx.err.log /var/log/supervisor/nginx.out.log \
-      /var/run/nginx.pid /var/run/supervisor/supervisord.pid; do
+      /var/run/nginx.pid /var/run/supervisor/supervisord.pid "$@"; do
       [ -f "$path" ] && [ ! -L "$path" ] && [ -r "$path" ] && [ -w "$path" ]
       [ "$(stat -c %u:%g:%a "$path")" = 0:1000:660 ]
       inode=$(stat -c %i "$path")
@@ -243,7 +249,7 @@ check_runtime_permissions() {
       [ ! -L "$path" ] && [ "$(stat -c %i "$path")" = "$inode" ]
     done
     expect_denied sh -c '\''printf "# unexpected\n" > /etc/nginx/conf.d/smoke-unexpected.conf'\''
-  '
+  ' sh "$@"
 }
 
 mkdir -p "$test_dir/app/nested" "$test_dir/app/.git" "$test_dir/app/conf/worker" \
@@ -414,7 +420,8 @@ command=/usr/bin/touch /tmp/smoke-mounted-supervisor
 priority=0
 startsecs=0
 autorestart=false
-stdout_logfile=/tmp/smoke-mounted-supervisor.log
+stdout_logfile=/var/log/supervisor/smoke-mounted-supervisor.log
+stdout_logfile_maxbytes=0
 redirect_stderr=true
 CONF
 printf 'precision=12\n' > "$test_dir/smoke.ini"
@@ -442,7 +449,8 @@ grep -F '"precision":"12"' "$test_dir/response.json"
 grep -F '"pool":"mounted"' "$test_dir/response.json"
 docker exec "$mounted_container" grep -Eq '^Uid:[[:space:]]+0[[:space:]]+0[[:space:]]+0[[:space:]]+0[[:space:]]*$' /proc/1/status
 check_php_logs "$mounted_container" mounted
-check_runtime_permissions "$mounted_container"
+# Supervisor creates this extra log at runtime, exercising setgid and umask.
+check_runtime_permissions "$mounted_container" /var/log/supervisor/smoke-mounted-supervisor.log
 docker exec "$mounted_container" test -f /tmp/smoke-mounted-supervisor
 docker exec "$mounted_container" php-fpm -O -tt > "$test_dir/fpm-config.txt" 2>&1
 grep -F 'process.max = 16' "$test_dir/fpm-config.txt"
@@ -453,6 +461,24 @@ grep -F 'smoke-mounted-nginx-site' "$test_dir/mounted-nginx.conf"
 docker exec --user www-data "$mounted_container" sh -eu -c '
   [ ! -w /etc/nginx/nginx.conf ]
   [ ! -w /etc/nginx/conf.d/nginx-site.conf ]
+'
+# Reproduce old log permissions before restarting; include rotated and hidden files.
+docker exec "$mounted_container" sh -eu -c '
+  mkdir -p /var/log/supervisor/nested
+  printf "smoke-preserved-log\n" > "/var/log/supervisor/.smoke rotated.1"
+  printf "smoke-preserved-log\n" > /var/log/supervisor/nested/smoke.log.2
+  for path in /var/log/supervisor/php-fpm.err.log \
+    /var/log/supervisor/smoke-mounted-supervisor.log \
+    "/var/log/supervisor/.smoke rotated.1" /var/log/supervisor/nested/smoke.log.2; do
+    chown root:root "$path"
+    chmod 600 "$path"
+  done
+  printf "smoke-link-target\n" > /tmp/smoke-log-link-target
+  chown root:root /tmp/smoke-log-link-target
+  chmod 640 /tmp/smoke-log-link-target
+  ln -s /tmp/smoke-log-link-target /var/log/supervisor/smoke-linked.log
+  chown root:root /var/log/supervisor
+  chmod 755 /var/log/supervisor
 '
 docker stop "$mounted_container" >/dev/null
 # Root Supervisor removes its PID at shutdown. The root entrypoint must restore
@@ -470,7 +496,13 @@ grep -F '"precision":"12"' "$test_dir/response.json"
 grep -F '"pool":"mounted"' "$test_dir/response.json"
 docker cp "$mounted_container:/etc/nginx/nginx.conf" "$test_dir/mounted-main-after.conf"
 check_php_logs "$mounted_container" mounted-restarted
+check_runtime_permissions "$mounted_container" /var/log/supervisor/smoke-mounted-supervisor.log \
+  "/var/log/supervisor/.smoke rotated.1" /var/log/supervisor/nested/smoke.log.2
 docker exec --user www-data "$mounted_container" sh -eu -c '
+  grep -Fxq smoke-preserved-log "/var/log/supervisor/.smoke rotated.1"
+  grep -Fxq smoke-preserved-log /var/log/supervisor/nested/smoke.log.2
+  [ -L /var/log/supervisor/smoke-linked.log ]
+  [ "$(stat -c %u:%g:%a /tmp/smoke-log-link-target)" = 0:0:640 ]
   [ "$(stat -c %u:%g:%a /var/run/supervisor)" = 0:0:755 ]
   [ "$(stat -c %u:%g:%a /var/run/supervisor/supervisord.pid)" = 0:1000:660 ]
   [ "$(cat /var/run/supervisor/supervisord.pid)" = 1 ]
