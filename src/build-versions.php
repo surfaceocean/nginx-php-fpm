@@ -74,6 +74,9 @@ try {
         $libraries['icu_data'] = INTL_ICU_DATA_VERSION;
     }
     $gd = gd_info();
+    if (!($gd['WebP Support'] ?? false)) {
+        throw new RuntimeException('GD WebP support is not available');
+    }
     $libraries['gd'] = $gd['GD Version'];
 
     // Debian revisions identify the actual native libraries used during compilation.
@@ -81,7 +84,7 @@ try {
         'libbz2-dev', 'libfreetype-dev', 'libgmp-dev', 'libicu-dev',
         'libjpeg62-turbo-dev', 'libmagickwand-dev', 'libmemcached-dev',
         'libonig-dev', 'libpng-dev', 'libpq-dev', 'librdkafka-dev',
-        'libsasl2-dev', 'libxml2-dev', 'libzip-dev', 'zlib1g-dev',
+        'libsasl2-dev', 'libwebp-dev', 'libxml2-dev', 'libzip-dev', 'zlib1g-dev',
     ];
     $nativePackages = [];
     foreach ($packages as $package) {

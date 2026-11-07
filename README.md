@@ -27,7 +27,7 @@ Supported PHP series are defined only in [`php-versions.json`](php-versions.json
 - Nginx, PHP-FPM, ImageMagick, Supervisord, Cron, Composer and PIE.
 - Node.js and its bundled npm from the [NodeSource LTS channel](https://github.com/nodesource/distributions/blob/master/scripts/deb/setup_lts.x). Each fresh build follows the LTS major version selected by NodeSource; actual installed versions are recorded in `versions.json`.
 - Administration tools: `sudo` and `apt-utils`.
-- PHP extensions: `mysqli`, `mysqlnd`, `pdo_mysql`, `pdo_pgsql`, `apcu`, `sysvsem`, `gmp`, `imagick`, `bz2`, `redis`, `rdkafka`, `memcached`, `zip`, `mbstring`, `exif`, `pcntl`, `bcmath`, `gd`, `intl` and OPcache, alongside the extensions provided by the official PHP image.
+- PHP extensions: `mysqli`, `mysqlnd`, `pdo_mysql`, `pdo_pgsql`, `apcu`, `sysvsem`, `gmp`, `imagick`, `bz2`, `redis`, `rdkafka`, `memcached`, `zip`, `mbstring`, `exif`, `pcntl`, `bcmath`, `gd` (FreeType, JPEG, PNG and WebP), `intl` and OPcache, alongside the extensions provided by the official PHP image.
 - MySQL extensions use the base image's built-in `mysqlnd` driver. OPcache is compiled only when it is not already included in the base image.
 - External extensions (`apcu`, `imagick`, `memcached`, `redis` and `rdkafka`) are compiled from the latest compatible stable releases using [PIE](https://github.com/php/pie) during each fresh build. The official `ghcr.io/php/pie:bin` image supplies the installer. PHP's bundled extensions continue to use `docker-php-ext-install`. Exact installed versions are recorded after building.
 
@@ -72,7 +72,7 @@ Docker Hub publication, automatic version commits and image cleanup are enabled 
 ## Run the image
 
 ```sh
-docker run --rm -p 8080:80 docker.io/surfaceocean/nginx-php-fpm:8.5
+docker run --rm --stop-timeout 70 -p 8080:80 docker.io/surfaceocean/nginx-php-fpm:8.5
 ```
 
 Open `http://localhost:8080/`. The bundled homepage returns plain text with the current request time in UTC:
@@ -84,6 +84,8 @@ Hello World!
 
 The default Nginx site serves PHP only: `/` runs `index.php`, and requests ending in `.php` run only when that file exists under the document root. Hidden paths, missing scripts, static files, directory URLs, application routes and PHP `PATH_INFO` URLs return 404. Mount a custom site configuration to enable static files or a front controller for your application.
 
+The image's healthcheck tests only whether a TCP connection to `127.0.0.1:80` succeeds. It does not send an HTTP request or check PHP-FPM or application health. The defaults are a `30s` interval, `5s` timeout, `30s` start period, `2s` start interval and `3` retries.
+
 ## Docker Compose
 
 ```yaml
@@ -91,6 +93,7 @@ services:
   app:
     image: docker.io/surfaceocean/nginx-php-fpm:8.5
     restart: unless-stopped
+    stop_grace_period: 70s
     ports:
       - "80:80"
     volumes:
@@ -104,6 +107,8 @@ services:
 Mounting `./app` replaces the bundled application, so provide your own `index.php`. The default document root is `/var/www/html`; `DOMAIN` defaults to `_`. These two environment variables are used only when `/etc/nginx/conf.d/nginx-site.conf` is absent. On first startup, the entrypoint generates that file from the template at `/etc/nginx/templates/nginx-site.conf.template`. An existing site file is loaded without being rewritten, so a read-only mount is supported. The main Nginx configuration sets `client_max_body_size 256m;`, which the default site inherits.
 
 The container starts as `root`, then the default Supervisord configuration switches Supervisord, Nginx and PHP-FPM to `www-data` with UID/GID `1000:1000`. Application files must be readable by `www-data`, and directories your application writes to must be writable by it. Keep this user for application processes when adding your own configuration. Commands started with `docker exec` or `docker compose exec` run as `root` by default; specify `--user www-data` to run them as the application user. A mounted custom Supervisord configuration controls its own user and each program's user.
+
+The default Supervisor configuration sends `QUIT` to Nginx and PHP-FPM for graceful shutdown and waits up to `30s` per service. The examples allow `70s` for container shutdown to cover both services stopping in sequence plus a small margin.
 
 For Laravel, set `DOCUMENT_ROOT: /var/www/html/public` and mount a custom Nginx site with the static-file and front-controller rules your application needs. The image starts only Nginx and PHP-FPM. To run queue workers, a scheduler or other background services, add their programs to your mounted main Supervisord configuration.
 
@@ -310,6 +315,8 @@ stderr_logfile_maxbytes=0
 stdout_logfile_maxbytes=0
 user=www-data
 priority=1
+stopsignal=QUIT
+stopwaitsecs=30
 
 [program:nginx]
 command=/usr/sbin/nginx -e /var/log/supervisor/nginx.err.log -g "daemon off;"
@@ -323,6 +330,8 @@ stderr_logfile_maxbytes=0
 stdout_logfile_maxbytes=0
 user=www-data
 priority=2
+stopsignal=QUIT
+stopwaitsecs=30
 ```
 
 </details>
@@ -497,7 +506,7 @@ group = www-data
 listen = 127.0.0.1:9000
 
 pm = dynamic
-pm.max_children = 5
+pm.max_children = 20
 pm.start_servers = 2
 pm.min_spare_servers = 1
 pm.max_spare_servers = 3

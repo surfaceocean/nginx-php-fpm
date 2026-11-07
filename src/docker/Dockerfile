@@ -42,6 +42,7 @@ RUN set -eux; \
         librdkafka-dev \
         libsasl2-dev \
         libtool \
+        libwebp-dev \
         libxml2-dev \
         libzip-dev \
         nano \
@@ -65,7 +66,7 @@ RUN set -eux; \
 # Build both MySQL APIs against mysqlnd instead of a separate client library.
 RUN set -eux; \
     php -r 'exit(extension_loaded("mysqlnd") ? 0 : 1);'; \
-    docker-php-ext-configure gd --with-freetype --with-jpeg; \
+    docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
     docker-php-ext-configure mysqli --with-mysqli=mysqlnd; \
     docker-php-ext-configure pdo_mysql --with-pdo-mysql=mysqlnd; \
     extensions="bcmath bz2 exif gd gmp intl mysqli pcntl pdo_mysql pdo_pgsql sysvsem zip"; \
@@ -158,5 +159,7 @@ RUN set -eux; \
 
 # Start as root; the default Supervisord configuration drops to www-data.
 USER root
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --start-interval=2s --retries=3 \
+    CMD php -r 'exit(@fsockopen("127.0.0.1", 80, $errno, $errstr, 2) ? 0 : 1);'
 EXPOSE 80
 ENTRYPOINT ["entrypoint.sh"]

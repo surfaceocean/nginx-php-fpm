@@ -16,6 +16,7 @@ services:
         image: docker.io/surfaceocean/nginx-php-fpm:8.5
         container_name: nginx-php-fpm
         restart: unless-stopped
+        stop_grace_period: 70s
         depends_on:
          - mysql
         environment:

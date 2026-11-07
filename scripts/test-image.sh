@@ -69,6 +69,17 @@ $imagick = new Imagick();
 $imagick->newImage(1, 1, 'white', 'png');
 check(strlen($imagick->getImageBlob()) > 0, 'ImageMagick PNG encoding failed');
 $imagick->clear();
+check(gd_info()['WebP Support'] ?? false, 'GD WebP support is disabled');
+$gd = imagecreatetruecolor(3, 2);
+check($gd !== false, 'GD image creation failed');
+check(imagefill($gd, 0, 0, imagecolorallocate($gd, 30, 90, 150)), 'GD image fill failed');
+ob_start();
+$webpEncoded = imagewebp($gd, null, 90);
+$webp = ob_get_clean();
+check($webpEncoded && is_string($webp) && strlen($webp) > 0, 'GD WebP encoding failed');
+$decoded = imagecreatefromstring($webp);
+check($decoded !== false && imagesx($decoded) === 3 && imagesy($decoded) === 2, 'GD WebP decoding or dimensions failed');
+unset($decoded, $gd);
 check(new Redis() instanceof Redis, 'Redis initialization failed');
 check(new Memcached() instanceof Memcached, 'Memcached initialization failed');
 check(new RdKafka\Conf() instanceof RdKafka\Conf, 'Rdkafka initialization failed');
@@ -76,6 +87,9 @@ $inventory = json_decode(file_get_contents('/usr/local/share/build-versions.json
 $freeTypeVersion = shell_exec("dpkg-query -W -f='\${Version}' libfreetype-dev");
 check(is_string($freeTypeVersion) && trim($freeTypeVersion) !== '', 'Installed FreeType version missing');
 check(($inventory['native_packages']['libfreetype-dev'] ?? null) === trim($freeTypeVersion), 'Recorded FreeType version differs from installed package');
+$webpVersion = shell_exec("dpkg-query -W -f='\${Version}' libwebp-dev");
+check(is_string($webpVersion) && trim($webpVersion) !== '', 'Installed WebP version missing');
+check(($inventory['native_packages']['libwebp-dev'] ?? null) === trim($webpVersion), 'Recorded WebP version differs from installed package');
 
 echo 'Compiled extension smoke tests passed', PHP_EOL;
 PHP
@@ -102,10 +116,13 @@ container="nginx-php-fpm-smoke-${RANDOM}-$$"
 mounted_container="${container}-mounted"
 env_container="${container}-env"
 invalid_container="${container}-invalid"
+health_container="${container}-health"
+request_container="${container}-request"
 test_dir=$(mktemp -d)
 cleanup() {
   status=$?
-  for name in "$container" "$mounted_container" "$env_container" "$invalid_container"; do
+  for name in "$container" "$mounted_container" "$env_container" "$invalid_container" \
+    "$health_container" "$request_container"; do
     if (( status != 0 )); then docker logs "$name" 2>&1 || true; fi
     docker rm -f "$name" >/dev/null 2>&1 || true
   done
@@ -123,6 +140,19 @@ wait_for_http() {
     sleep 1
   done
   echo "HTTP readiness failed: $name$path" >&2
+  return 1
+}
+
+wait_for_health() {
+  local name=$1 expected=$2 actual
+  for attempt in {1..90}; do
+    actual=$(docker inspect "$name" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}')
+    [[ "$actual" == "$expected" ]] && return 0
+    [[ "$actual" != missing && $(docker inspect "$name" --format '{{.State.Running}}') == true ]] || break
+    sleep 1
+  done
+  echo "Expected health status $expected: $name" >&2
+  docker inspect "$name" --format '{{json .State.Health}}' >&2
   return 1
 }
 
@@ -252,6 +282,38 @@ check_runtime_permissions() {
   ' sh "$@"
 }
 
+# Inherit the image healthcheck while serving TCP only: neither HTTP nor FPM is available.
+cat > "$test_dir/health-listener.php" <<'PHP'
+<?php
+$listener = stream_socket_server('tcp://127.0.0.1:80', $errno, $error);
+if ($listener === false) {
+    fwrite(STDERR, "TCP fixture failed: $error ($errno)\n");
+    exit(1);
+}
+stream_set_blocking($listener, false);
+while (!is_file('/tmp/smoke-close-http-listener')) {
+    $client = @stream_socket_accept($listener, 0);
+    if ($client !== false) { fclose($client); }
+    usleep(100000);
+}
+fclose($listener);
+while (true) { sleep(1); }
+PHP
+docker create --platform "$platform" --name "$health_container" \
+  --health-interval=1s --health-timeout=2s --health-start-period=1s --health-retries=1 \
+  --entrypoint php "$image" /tmp/smoke-health-listener.php >/dev/null
+docker cp "$test_dir/health-listener.php" "$health_container:/tmp/smoke-health-listener.php"
+docker start "$health_container" >/dev/null
+wait_for_health "$health_container" healthy
+docker exec "$health_container" php -r '
+  $connection = @fsockopen("127.0.0.1", 9000, $errno, $error, 1);
+  if ($connection !== false) { fclose($connection); exit(1); }
+'
+docker exec "$health_container" touch /tmp/smoke-close-http-listener
+wait_for_health "$health_container" unhealthy
+[[ $(docker inspect "$health_container" --format '{{.State.Running}}') == true ]]
+docker rm -f "$health_container" >/dev/null
+
 mkdir -p "$test_dir/app/nested" "$test_dir/app/.git" "$test_dir/app/conf/worker" \
   "$test_dir/app/conf/nginx" "$test_dir/supervisor/conf.d"
 cat > "$test_dir/app/__build_probe.php" <<'PHP'
@@ -264,6 +326,14 @@ if (isset($_GET['log_probe'])) {
 echo json_encode(['php' => PHP_VERSION, 'sapi' => PHP_SAPI,
     'query' => $_GET['probe'] ?? '', 'precision' => ini_get('precision'),
     'pool' => getenv('SMOKE_POOL') ?: '']);
+PHP
+cat > "$test_dir/app/__slow_shutdown.php" <<'PHP'
+<?php
+file_put_contents('/tmp/smoke-shutdown-started', 'started');
+sleep(5);
+file_put_contents('/tmp/smoke-shutdown-completed', 'completed');
+header('Content-Type: text/plain');
+echo "smoke-graceful-complete\n";
 PHP
 cp "$test_dir/app/__build_probe.php" "$test_dir/app/nested/allowed.php"
 cp "$test_dir/app/__build_probe.php" "$test_dir/app/.hidden.php"
@@ -303,6 +373,7 @@ docker cp "$test_dir/app/." "$container:/var/www/html"
 docker cp "$test_dir/supervisor/." "$container:/etc/supervisor"
 docker start "$container" >/dev/null
 wait_for_http "$container" '/__build_probe.php?probe=runtime-check'
+wait_for_health "$container" healthy
 
 grep -F "\"php\":\"${php_series}." "$test_dir/response.json"
 grep -F '"sapi":"fpm-fcgi"' "$test_dir/response.json"
@@ -363,7 +434,16 @@ docker exec --user www-data "$container" sh -eu -c '
   ! grep -Fq "smoke-legacy-nginx-site" /etc/nginx/conf.d/nginx-site.conf
 '
 docker exec "$container" nginx -e /var/log/supervisor/nginx.err.log -t
-docker exec "$container" php-fpm -t
+docker exec "$container" php-fpm -O -tt > "$test_dir/default-fpm-config.txt" 2>&1
+grep -F 'pm.max_children = 20' "$test_dir/default-fpm-config.txt"
+docker exec "$container" python3 -c '
+import configparser
+config = configparser.ConfigParser()
+config.read("/etc/supervisor/supervisord.conf")
+for program in ("program:nginx", "program:php-fpm"):
+    assert config.get(program, "stopsignal") == "QUIT", program
+    assert config.getint(program, "stopwaitsecs") == 30, program
+'
 
 # An existing active site must survive restart without regeneration or replacement.
 docker exec "$container" sh -eu -c '
@@ -371,7 +451,26 @@ docker exec "$container" sh -eu -c '
 '
 site_inode=$(docker exec "$container" stat -c %i /etc/nginx/conf.d/nginx-site.conf)
 docker cp "$container:/etc/nginx/conf.d/nginx-site.conf" "$test_dir/site-before.conf"
-docker stop "$container" >/dev/null
+# Stop during a PHP request; an independent client must receive its complete response.
+docker run --rm --platform "$platform" --name "$request_container" \
+  --network "container:$container" --entrypoint curl "$image" \
+  --fail --silent --show-error --max-time 40 http://127.0.0.1/__slow_shutdown.php \
+  > "$test_dir/shutdown-response.txt" 2> "$test_dir/shutdown-request.err" &
+request_pid=$!
+for attempt in {1..30}; do
+  if docker exec "$container" test -f /tmp/smoke-shutdown-started; then break; fi
+  sleep 0.2
+done
+docker exec "$container" test -f /tmp/smoke-shutdown-started
+docker exec "$container" test ! -e /tmp/smoke-shutdown-completed
+docker stop --time 70 "$container" >/dev/null
+if ! wait "$request_pid"; then
+  cat "$test_dir/shutdown-request.err" >&2
+  echo 'PHP request failed during graceful container shutdown' >&2
+  exit 1
+fi
+grep -Fxq smoke-graceful-complete "$test_dir/shutdown-response.txt"
+[[ $(docker inspect "$container" --format '{{.State.ExitCode}}') == 0 ]]
 docker start "$container" >/dev/null
 wait_for_http "$container" /__build_probe.php
 docker cp "$container:/etc/nginx/conf.d/nginx-site.conf" "$test_dir/site-after.conf"
@@ -383,7 +482,7 @@ docker exec "$container" sh -eu -c '
   mv /etc/nginx/conf.d/nginx-site.conf /tmp/smoke-readable-nginx-site.conf
   ln -s /tmp/smoke-readable-nginx-site.conf /etc/nginx/conf.d/nginx-site.conf
 '
-docker stop "$container" >/dev/null
+docker stop --time 70 "$container" >/dev/null
 docker start "$container" >/dev/null
 wait_for_http "$container" /__build_probe.php
 [[ $(docker exec "$container" readlink /etc/nginx/conf.d/nginx-site.conf) == /tmp/smoke-readable-nginx-site.conf ]]
@@ -480,7 +579,7 @@ docker exec "$mounted_container" sh -eu -c '
   chown root:root /var/log/supervisor
   chmod 755 /var/log/supervisor
 '
-docker stop "$mounted_container" >/dev/null
+docker stop --time 70 "$mounted_container" >/dev/null
 # Root Supervisor removes its PID at shutdown. The root entrypoint must restore
 # the protected, group-writable file before Supervisor starts on the next run.
 if docker cp "$mounted_container:/var/run/supervisor/supervisord.pid" \
