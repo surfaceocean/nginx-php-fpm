@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "image": "docker.io/surfaceocean/nginx-php-fpm",
-  "generated_at": "2026-11-12T16:28:32Z",
+  "generated_at": "2026-11-13T11:16:40Z",
   "source": {
     "repository": "surfaceocean/nginx-php-fpm",
-    "commit": "403469721726bbff82cf27937ea6f570713d0c90",
-    "run_id": "43258052047",
+    "commit": "ae60e99fc841806cd22c7e9dbfbc9304a132db73",
+    "run_id": "43415012312",
     "run_attempt": "1"
   },
   "releases": {
@@ -17,7 +17,7 @@
         "docker.io/surfaceocean/nginx-php-fpm:php8.4",
         "docker.io/surfaceocean/nginx-php-fpm:8.4.27"
       ],
-      "digest": "sha256:1fede42141f7d13ed0f3e2cf2a77d34d549e75ecaa79fd12393dde5a4410c6fd",
+      "digest": "sha256:5d27d94a35fd67ee6baf328262a104c52f84cc60437a0574c980d7c95440ecfd",
       "platforms": {
         "linux/amd64": {
           "php": "8.4.27",
@@ -102,7 +102,7 @@
             "libmemcached-dev": "1.1.4-1.1+b2",
             "libonig-dev": "6.9.9-1+b1",
             "libpng-dev": "1.6.48-1+deb13u6",
-            "libpq-dev": "17.11-0+deb13u1",
+            "libpq-dev": "17.12-0+deb13u1",
             "librdkafka-dev": "2.8.0-1",
             "libsasl2-dev": "2.1.28+dfsg1-9",
             "libwebp-dev": "1.5.0-0.1",
@@ -110,7 +110,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:46c6118fc7cff27c09bd539aa2db0257063873c1322a59060c1317489215fd39"
+          "digest": "sha256:2919bd1f64db1e23071d16c86abac70577da9161bbb278ffb0fee9d66186d59c"
         },
         "linux/arm64": {
           "php": "8.4.27",
@@ -195,7 +195,7 @@
             "libmemcached-dev": "1.1.4-1.1+b2",
             "libonig-dev": "6.9.9-1+b1",
             "libpng-dev": "1.6.48-1+deb13u6",
-            "libpq-dev": "17.11-0+deb13u1",
+            "libpq-dev": "17.12-0+deb13u1",
             "librdkafka-dev": "2.8.0-1",
             "libsasl2-dev": "2.1.28+dfsg1-9",
             "libwebp-dev": "1.5.0-0.1",
@@ -203,7 +203,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:2a420b3554e7e9e44338f59de7b403a9806527a1e311108879fd4b25627ba846"
+          "digest": "sha256:9c7ac9d68be233934314547950db728843881542c5e4a65c1770000d33c78a92"
         }
       }
     },
@@ -216,7 +216,7 @@
         "docker.io/surfaceocean/nginx-php-fpm:8.5.12",
         "docker.io/surfaceocean/nginx-php-fpm:latest"
       ],
-      "digest": "sha256:4e255bdef7618ce539b63a01814620fd47999e29c97e00a838942d725db35876",
+      "digest": "sha256:201f93e54f5c5b252276315d370a4f2cc9c98640bb7941feeef0e3ef001ba841",
       "platforms": {
         "linux/amd64": {
           "php": "8.5.12",
@@ -303,7 +303,7 @@
             "libmemcached-dev": "1.1.4-1.1+b2",
             "libonig-dev": "6.9.9-1+b1",
             "libpng-dev": "1.6.48-1+deb13u6",
-            "libpq-dev": "17.11-0+deb13u1",
+            "libpq-dev": "17.12-0+deb13u1",
             "librdkafka-dev": "2.8.0-1",
             "libsasl2-dev": "2.1.28+dfsg1-9",
             "libwebp-dev": "1.5.0-0.1",
@@ -311,7 +311,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:588c81b32fd849039a59dc033ed5619936ca0305b0f92c94620ba06ee21516a4"
+          "digest": "sha256:49160ba399aeb13cf4c376827ba904bd2e6feafcb65ec890e8d28358a054fbbe"
         },
         "linux/arm64": {
           "php": "8.5.12",
@@ -398,7 +398,7 @@
             "libmemcached-dev": "1.1.4-1.1+b2",
             "libonig-dev": "6.9.9-1+b1",
             "libpng-dev": "1.6.48-1+deb13u6",
-            "libpq-dev": "17.11-0+deb13u1",
+            "libpq-dev": "17.12-0+deb13u1",
             "librdkafka-dev": "2.8.0-1",
             "libsasl2-dev": "2.1.28+dfsg1-9",
             "libwebp-dev": "1.5.0-0.1",
@@ -406,7 +406,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:9e5995d797d1e4856232f27e74f372d1dd19e13dcb7cf0d16a49cd384ebdb3b3"
+          "digest": "sha256:974affc6665645931c1a8d11e48358ca4991060b20387c6bf25e196b77c0d789"
         }
       }
     }
