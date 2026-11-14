@@ -1,5 +1,6 @@
 """Exercise Docker Hub cleanup without network access or destructive API calls."""
 import base64
+from collections import Counter
 from copy import deepcopy
 from io import BytesIO, StringIO
 import importlib.util
@@ -292,6 +293,52 @@ class CleanupPolicyTests(unittest.TestCase):
         with self.assertRaises(cleanup.CleanupError):
             cleanup.verify_current(self.registry, self.versions, sleep=sleep)
         self.assertEqual([call.args[0] for call in sleep.call_args_list], [10, 20, 30])
+
+    def test_aliases_are_read_only_during_planning_and_before_manifest_deletion(self):
+        self.old_index()
+        self.run_cleanup()
+        counts = Counter(self.registry.reads)
+        self.assertEqual({tag: counts[tag] for tag in cleanup.aliases(self.versions)},
+            {tag: 2 for tag in cleanup.aliases(self.versions)})
+
+    def test_verification_retry_discards_the_failed_snapshot(self):
+        self.old_index()
+        self.registry.tags['8.5'] = sha(30)
+        def publish(_):
+            self.registry.tags['8.5'] = sha(20)
+        current = cleanup.verify_current(self.registry, self.versions, sleep=publish)
+        self.assertEqual(set(current), set(cleanup.aliases(self.versions)))
+        self.assertEqual(current['8.5'].digest, sha(20))
+        self.assertEqual(self.registry.reads.count('8.4'), 2)
+
+    def test_publication_change_after_planning_stops_manifest_deletion(self):
+        old, _ = self.old_index()
+        original = cleanup.plan_cleanup
+        def changed(*args, **kwargs):
+            plan = original(*args, **kwargs)
+            self.registry.tags['8.4'] = old
+            return plan
+        with patch.object(cleanup, 'plan_cleanup', side_effect=changed):
+            with self.assertRaisesRegex(cleanup.CleanupError, 'no longer match'):
+                self.run_cleanup()
+        self.assertEqual(self.hub.deleted, ['build-90-1-8.4-amd64'])
+        self.assertEqual(self.registry.deleted, [])
+
+    def test_publication_change_during_reference_refresh_stops_manifest_deletion(self):
+        old, _ = self.old_index()
+        list_tags = self.hub.list_tags
+        calls = 0
+        def changed():
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                self.registry.tags['8.4'] = old
+            return list_tags()
+        self.hub.list_tags = changed
+        with self.assertRaisesRegex(cleanup.CleanupError, 'no longer match'):
+            self.run_cleanup()
+        self.assertTrue(self.hub.deleted)
+        self.assertEqual(self.registry.deleted, [])
     def test_invalid_known_digest_is_rejected_before_planning_or_deletion(self):
         self.old_index()
         self.registry.require_delete = Mock()

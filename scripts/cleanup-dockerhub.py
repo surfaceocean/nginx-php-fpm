@@ -294,6 +294,7 @@ class Registry:
 
 def verify_current(registry, versions, sleep=time.sleep, attempts=4):
     for attempt in range(attempts):
+        current = {}
         matches = True
         for tag, release in aliases(versions).items():
             actual = registry.manifest(tag, missing_ok=True)
@@ -301,8 +302,9 @@ def verify_current(registry, versions, sleep=time.sleep, attempts=4):
             if actual is None or actual.digest != release['digest'] or actual.platforms != expected:
                 matches = False
                 break
+            current[tag] = actual
         if matches:
-            return
+            return current
         if attempt + 1 < attempts:
             sleep(RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)])
     raise CleanupError('Published tags no longer match this build; refuse cleanup of a stale or inconsistent publication')
@@ -359,7 +361,7 @@ class Plan:
 
 def plan_cleanup(hub, registry, versions, previous=None, sleep=time.sleep, known_digests=(),
         deleted_digests=(), record_deleted=None):
-    verify_current(registry, versions, sleep=sleep)
+    current = verify_current(registry, versions, sleep=sleep)
     tags = hub.list_tags()
     selected = old_tags(tags, versions)
     protected_roots = {d for release in versions['releases'].values()
@@ -372,7 +374,7 @@ def plan_cleanup(hub, registry, versions, previous=None, sleep=time.sleep, known
     # Live references override the ledger: an identical digest can be republished.
     # Never use deletion history to skip discovery of protected images or children.
     for tag in sorted(tags):
-        manifest = registry.manifest(tag, missing_ok=tag in selected)
+        manifest = current[tag] if tag in current else registry.manifest(tag, missing_ok=tag in selected)
         if manifest:
             (candidates if tag in selected else protected_roots).add(manifest.digest)
     protected = set(graph_from_roots(registry, protected_roots))
@@ -401,13 +403,15 @@ def cleanup(hub, registry, versions, previous=None, delete=False, sleep=time.sle
     if not delete:
         emit(f'Dry run: {len(plan.tags)} obsolete tags and {len(plan.order)} old manifest candidates; nothing deleted')
         return {'tags': 0, 'manifests': 0, 'retained': 0}
-    verify_current(registry, versions, sleep=sleep)
+    # Publishing workflows share one concurrency group. Planning already verified
+    # the publication, and managed temporary tags never include release aliases.
     deleted_tags = sum(bool(hub.delete_tag(tag)) for tag in plan.tags)
-    verify_current(registry, versions, sleep=sleep)
-    # Another publisher may have added a tag after our plan was assembled.
-    # Refresh every remaining reference before GC, including future build tags.
+    # Refresh other live references, including tags added outside this workflow.
+    # Current aliases already belong to plan.protected and are freshly verified
+    # together immediately before manifest deletion, after graph discovery.
+    current_aliases = set(aliases(versions))
     remaining_roots = set()
-    for tag in sorted(hub.list_tags()):
+    for tag in sorted(hub.list_tags() - current_aliases):
         manifest = registry.manifest(tag, missing_ok=True)
         if manifest is not None:  # Hub's tag listing can lag behind a successful deletion.
             remaining_roots.add(manifest.digest)
@@ -439,7 +443,6 @@ def cleanup(hub, registry, versions, previous=None, delete=False, sleep=time.sle
                 emit('Deleted manifest: ' + item)
         else:
             raise CleanupError(f'Unexpected manifest deletion response (HTTP {status})')
-    verify_current(registry, versions, sleep=sleep)
     emit(f'Cleanup complete: {deleted_tags} tags and {deleted} manifests deleted; {retained} referenced/protected manifests kept')
     return {'tags': deleted_tags, 'manifests': deleted, 'retained': retained}
 
