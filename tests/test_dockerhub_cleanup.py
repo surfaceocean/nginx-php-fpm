@@ -91,9 +91,10 @@ class CleanupPolicyTests(unittest.TestCase):
         self.registry = FakeRegistry(self.versions)
         self.hub = FakeHub(self.registry)
         self.messages = []
-    def run_cleanup(self, delete=True, previous=None, known_digests=()):
+    def run_cleanup(self, delete=True, previous=None, known_digests=(), deleted_digests=(), record_deleted=None):
         return cleanup.cleanup(self.hub, self.registry, self.versions, previous, delete,
-            sleep=lambda _: None, emit=self.messages.append, known_digests=known_digests)
+            sleep=lambda _: None, emit=self.messages.append, known_digests=known_digests,
+            deleted_digests=deleted_digests, record_deleted=record_deleted)
     def old_index(self, tag='build-90-1-8.4-amd64', number=30):
         platforms = {'linux/amd64': sha(number + 1), 'linux/arm64': sha(number + 2)}
         self.registry.add_index(sha(number), platforms)
@@ -189,6 +190,108 @@ class CleanupPolicyTests(unittest.TestCase):
         self.assertEqual(self.run_cleanup(known_digests=known)['manifests'], 1)
         self.assertEqual(self.run_cleanup(known_digests=known)['manifests'], 0)
         self.assertEqual(self.registry.deleted, [sha(30)])
+
+    def test_incremental_run_does_not_query_deleted_or_confirmed_missing_history(self):
+        self.registry.add_leaf(sha(30))
+        recorded = set()
+        known = {sha(30), sha(999)}
+        self.assertEqual(self.run_cleanup(known_digests=known, record_deleted=recorded.add)['manifests'], 1)
+        self.assertEqual(recorded, known)
+        self.registry.reads.clear()
+        self.assertEqual(self.run_cleanup(known_digests=known, deleted_digests=recorded)['manifests'], 0)
+        self.assertTrue(known.isdisjoint(self.registry.reads))
+
+    def test_deleted_previous_inventory_is_skipped_without_registry_requests(self):
+        previous = deepcopy(self.versions)
+        previous['releases'] = {'8.4': previous['releases']['8.4']}
+        old = previous['releases']['8.4']
+        old['digest'] = sha(30)
+        old['platforms']['linux/amd64']['digest'] = sha(31)
+        old['platforms']['linux/arm64']['digest'] = sha(32)
+        recorded = {sha(30), sha(31), sha(32)}
+        self.run_cleanup(previous=previous, deleted_digests=recorded)
+        self.assertTrue(recorded.isdisjoint(self.registry.reads))
+
+    def test_republished_temporary_image_overrides_old_deletion_record(self):
+        old, children = self.old_index()
+        recorded = {old, *children}
+        self.assertEqual(self.run_cleanup(known_digests=recorded, deleted_digests=recorded)['manifests'], 3)
+        self.assertEqual(set(self.registry.deleted), recorded)
+
+    def test_republished_retained_image_and_shared_children_remain_protected(self):
+        old, children = self.old_index('custom')
+        self.registry.add_index(sha(40), {'linux/amd64': sha(31), 'linux/arm64': sha(42)})
+        recorded = {old, *children}
+        result = self.run_cleanup(known_digests={*recorded, sha(40)}, deleted_digests=recorded)
+        self.assertEqual(result['manifests'], 2)
+        self.assertEqual(set(self.registry.deleted), {sha(40), sha(42)})
+        self.assertTrue(recorded.issubset(self.registry.nodes))
+
+    def test_partial_deletion_is_saved_and_next_run_resumes_remaining_children(self):
+        old, children = self.old_index()
+        known = {old, *children}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'deleted.json'
+            ledger = cleanup.DeletionLedger(path, IMAGE)
+            delete_manifest = self.registry.delete_manifest
+            def interrupted(value):
+                if value != old:
+                    raise cleanup.CleanupError('Rate limited')
+                return delete_manifest(value)
+            self.registry.delete_manifest = interrupted
+            with self.assertRaisesRegex(cleanup.CleanupError, 'Rate limited'):
+                self.run_cleanup(known_digests=known, record_deleted=ledger.record)
+            self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['digests'], [old])
+            self.registry.delete_manifest = delete_manifest
+            self.registry.reads.clear()
+            ledger = cleanup.DeletionLedger(path, IMAGE)
+            result = self.run_cleanup(known_digests=known, deleted_digests=ledger.digests,
+                record_deleted=ledger.record)
+            self.assertEqual(result['manifests'], 2)
+            self.assertNotIn(old, self.registry.reads)
+            self.assertEqual(set(json.loads(path.read_text(encoding='utf-8'))['digests']), known)
+
+    def test_forbidden_or_failed_deletions_are_not_recorded(self):
+        old, _ = self.old_index()
+        record = Mock()
+        self.registry.blocked.add(old)
+        self.run_cleanup(record_deleted=record)
+        record.assert_not_called()
+        self.registry.blocked.clear()
+        for code in (500, 429):
+            with self.subTest(code=code):
+                self.registry.delete_manifest = Mock(return_value=code)
+                with self.assertRaises(cleanup.CleanupError):
+                    self.run_cleanup(known_digests={old}, record_deleted=record)
+                record.assert_not_called()
+
+    def test_delete_404_is_recorded_as_already_absent(self):
+        old, children = self.old_index()
+        recorded = set()
+        self.registry.delete_manifest = Mock(return_value=404)
+        result = self.run_cleanup(record_deleted=recorded.add)
+        self.assertEqual(result['manifests'], 0)
+        self.assertEqual(recorded, {old, *children})
+
+    def test_dry_run_does_not_record_missing_or_planned_deletions(self):
+        self.old_index()
+        record = Mock()
+        self.run_cleanup(delete=False, known_digests={sha(999)}, record_deleted=record)
+        record.assert_not_called()
+
+    def test_invalid_deleted_digest_fails_before_network_or_deletion(self):
+        with self.assertRaises(cleanup.CleanupError):
+            self.run_cleanup(deleted_digests=['latest'])
+        self.assertEqual(self.registry.reads, [])
+        self.assertEqual(self.registry.deleted, [])
+
+    def test_publication_verification_retries_after_10_20_30_seconds(self):
+        self.old_index()
+        self.registry.tags['8.4'] = sha(30)
+        sleep = Mock()
+        with self.assertRaises(cleanup.CleanupError):
+            cleanup.verify_current(self.registry, self.versions, sleep=sleep)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [10, 20, 30])
     def test_invalid_known_digest_is_rejected_before_planning_or_deletion(self):
         self.old_index()
         self.registry.require_delete = Mock()
@@ -301,6 +404,55 @@ class CleanupPolicyTests(unittest.TestCase):
             self.assertEqual(cleanup.read_known_digests(path, IMAGE), {sha(30), sha(31)})
 
 
+class DeletionLedgerTests(unittest.TestCase):
+    def test_merge_is_sorted_deduplicated_and_persists_each_addition(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'deleted.json'
+            ledger = cleanup.DeletionLedger(path, IMAGE)
+            ledger.record(sha(32))
+            ledger.merge([sha(31), sha(32)])
+            self.assertEqual(json.loads(path.read_text(encoding='utf-8')),
+                {'schema_version': 1, 'image': IMAGE, 'digests': [sha(31), sha(32)]})
+            self.assertEqual(cleanup.DeletionLedger(path, IMAGE).digests, {sha(31), sha(32)})
+            self.assertEqual(list(Path(directory).iterdir()), [path])
+
+    def test_atomic_write_failure_preserves_existing_ledger(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'deleted.json'
+            ledger = cleanup.DeletionLedger(path, IMAGE)
+            ledger.record(sha(30))
+            original = path.read_bytes()
+            with patch.object(Path, 'replace', side_effect=OSError('Unable to replace')):
+                with self.assertRaises(OSError):
+                    ledger.record(sha(31))
+            self.assertEqual(path.read_bytes(), original)
+            self.assertEqual(ledger.digests, {sha(30)})
+            self.assertEqual(list(Path(directory).iterdir()), [path])
+
+    def test_invalid_ledger_cli_fails_before_authentication(self):
+        valid = {'schema_version': 1, 'image': IMAGE, 'digests': [sha(30)]}
+        cases = [None, [], {**valid, 'schema_version': 2}, {**valid, 'image': 'docker.io/other/image'},
+            {**valid, 'digests': None}, {**valid, 'digests': ['latest']}]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'deleted.json'
+            for value in cases:
+                path.write_text(json.dumps(value), encoding='utf-8')
+                with self.subTest(value=value), patch.object(cleanup, 'Http') as http, \
+                        patch('sys.stderr', new_callable=StringIO), self.assertRaises(SystemExit):
+                    cleanup.main(['--image', IMAGE, '--deleted', str(path), '--delete'])
+                http.assert_not_called()
+
+    def test_cli_merges_concurrent_progress_without_authentication(self):
+        with tempfile.TemporaryDirectory() as directory:
+            current, latest = (Path(directory) / name for name in ('deleted.json', 'latest.json'))
+            cleanup.DeletionLedger(current, IMAGE).merge([sha(30), sha(31)])
+            cleanup.DeletionLedger(latest, IMAGE).merge([sha(31), sha(32)])
+            with patch.object(cleanup, 'Http') as http:
+                cleanup.main(['--image', IMAGE, '--deleted', str(current), '--merge-deleted', str(latest)])
+            http.assert_not_called()
+            self.assertEqual(cleanup.DeletionLedger(current, IMAGE).digests, {sha(30), sha(31), sha(32)})
+
+
 class Reply:
     def __init__(self, value=None, status=200, headers=None):
         self.status, self.headers = status, headers or {}
@@ -360,13 +512,19 @@ class ApiTests(unittest.TestCase):
     def test_retry_is_bounded_and_honors_retry_after(self):
         opener, sleep = Mock(), Mock()
         opener.open.side_effect = [HTTPError(cleanup.HUB, 429, SECRET, {'Retry-After': '2'}, BytesIO()),
-            URLError(SECRET), Reply({'ok': True})]
+            URLError(SECRET), HTTPError(cleanup.HUB, 503, SECRET, {}, BytesIO()), Reply({'ok': True})]
         result = cleanup.Http(opener=opener, sleep=sleep).request('GET', cleanup.HUB)
         self.assertEqual(result.json(), {'ok': True})
-        self.assertEqual([x.args[0] for x in sleep.call_args_list], [2, 2])
-        opener.open.side_effect = [HTTPError(cleanup.HUB, 503, SECRET, {}, BytesIO())] * 3
-        with self.assertRaisesRegex(cleanup.CleanupError, '3 attempts'):
-            cleanup.Http(opener=opener, sleep=lambda _: None).request('GET', cleanup.HUB)
+        self.assertEqual([x.args[0] for x in sleep.call_args_list], [10, 20, 30])
+        opener.open.side_effect = [HTTPError(cleanup.HUB, 429, SECRET, {'Retry-After': '45'}, BytesIO()), Reply()]
+        sleep.reset_mock()
+        cleanup.Http(opener=opener, sleep=sleep).request('GET', cleanup.HUB)
+        sleep.assert_called_once_with(45)
+        opener.open.side_effect = [HTTPError(cleanup.HUB, 503, SECRET, {}, BytesIO())] * 4
+        sleep.reset_mock()
+        with self.assertRaisesRegex(cleanup.CleanupError, '4 attempts'):
+            cleanup.Http(opener=opener, sleep=sleep).request('GET', cleanup.HUB)
+        self.assertEqual([x.args[0] for x in sleep.call_args_list], [10, 20, 30])
     def test_errors_do_not_expose_credentials_or_response_bodies(self):
         for code in (401, 403, 302):
             opener = Mock()

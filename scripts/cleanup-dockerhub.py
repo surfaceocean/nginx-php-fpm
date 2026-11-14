@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import tempfile
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urljoin, urlsplit
@@ -19,6 +20,7 @@ DIGEST = re.compile(r'sha256:[a-f0-9]{64}\Z')
 TAG = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z')
 CANDIDATE = re.compile(r'build-([0-9]+)-([0-9]+)-([0-9]+\.[0-9]+)-(amd64|arm64)\Z')
 PLATFORMS = {'linux/amd64', 'linux/arm64'}
+RETRY_DELAYS = (10, 20, 30)
 ACCEPT = ', '.join(('application/vnd.oci.image.index.v1+json',
     'application/vnd.docker.distribution.manifest.list.v2+json',
     'application/vnd.oci.image.manifest.v1+json',
@@ -123,7 +125,7 @@ class Response:
 
 
 class Http:
-    def __init__(self, opener=None, sleep=time.sleep, attempts=3):
+    def __init__(self, opener=None, sleep=time.sleep, attempts=4):
         self.opener, self.sleep, self.attempts = opener or build_opener(NoRedirect()), sleep, attempts
     def request(self, method, url, headers=None, payload=None, allowed=(), label='Docker API request'):
         data = None if payload is None else json.dumps(payload).encode('utf-8')
@@ -147,7 +149,9 @@ class Http:
                 status = 'network timeout or connection error'
             if attempt + 1 == self.attempts:
                 raise CleanupError(f'{label} failed after {self.attempts} attempts ({status})') from None
-            self.sleep(min(int(retry_after), 30) if retry_after and retry_after.isdigit() else 2 ** attempt)
+            delay = RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)]
+            # Never retry earlier than Docker Hub's explicit cooldown.
+            self.sleep(max(delay, int(retry_after)) if retry_after and retry_after.isdigit() else delay)
 
 
 class Hub:
@@ -288,7 +292,7 @@ class Registry:
             allowed=(403, 404), label='Delete unreferenced Docker manifest').status
 
 
-def verify_current(registry, versions, sleep=time.sleep, attempts=3):
+def verify_current(registry, versions, sleep=time.sleep, attempts=4):
     for attempt in range(attempts):
         matches = True
         for tag, release in aliases(versions).items():
@@ -300,11 +304,11 @@ def verify_current(registry, versions, sleep=time.sleep, attempts=3):
         if matches:
             return
         if attempt + 1 < attempts:
-            sleep(2 ** attempt)
+            sleep(RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)])
     raise CleanupError('Published tags no longer match this build; refuse cleanup of a stale or inconsistent publication')
 
 
-def graph_from_roots(registry, roots, missing_ok=False):
+def graph_from_roots(registry, roots, missing_ok=False, record_missing=None):
     graph, pending, seen = {}, list(roots), set()
     while pending:
         item = pending.pop()
@@ -315,6 +319,8 @@ def graph_from_roots(registry, roots, missing_ok=False):
         if manifest:
             graph[item] = manifest
             pending.extend(manifest.children)
+        elif record_missing is not None:
+            record_missing(item)
         if len(seen) > 10000:
             raise CleanupError('Excessive manifest graph; refuse cleanup')
     return graph
@@ -351,34 +357,43 @@ class Plan:
     protected: set
 
 
-def plan_cleanup(hub, registry, versions, previous=None, sleep=time.sleep, known_digests=()):
+def plan_cleanup(hub, registry, versions, previous=None, sleep=time.sleep, known_digests=(),
+        deleted_digests=(), record_deleted=None):
     verify_current(registry, versions, sleep=sleep)
     tags = hub.list_tags()
     selected = old_tags(tags, versions)
     protected_roots = {d for release in versions['releases'].values()
         for d in [release['digest'], *(r['digest'] for r in release['platforms'].values())]}
     candidates = set(known_digests)
+    if previous:
+        for release in previous['releases'].values():
+            candidates.update([release['digest'], *(r['digest'] for r in release['platforms'].values())])
+    candidates.difference_update(deleted_digests)
+    # Live references override the ledger: an identical digest can be republished.
+    # Never use deletion history to skip discovery of protected images or children.
     for tag in sorted(tags):
         manifest = registry.manifest(tag, missing_ok=tag in selected)
         if manifest:
             (candidates if tag in selected else protected_roots).add(manifest.digest)
-    if previous:
-        for release in previous['releases'].values():
-            candidates.update([release['digest'], *(r['digest'] for r in release['platforms'].values())])
     protected = set(graph_from_roots(registry, protected_roots))
-    graph = {d: m for d, m in graph_from_roots(registry, candidates, missing_ok=True).items() if d not in protected}
+    graph = {d: m for d, m in graph_from_roots(registry, candidates, missing_ok=True,
+        record_missing=record_deleted).items() if d not in protected}
     return Plan(selected, graph, deletion_order(graph), protected)
 
 
-def cleanup(hub, registry, versions, previous=None, delete=False, sleep=time.sleep, emit=print, known_digests=()):
+def cleanup(hub, registry, versions, previous=None, delete=False, sleep=time.sleep, emit=print, known_digests=(),
+        deleted_digests=(), record_deleted=None):
     image = versions.get('image') if isinstance(versions, dict) else None
     versions = validate_versions(versions, image)
     if previous is not None:
         previous = validate_versions(previous, image, previous=True)
     known_digests = {digest(value) for value in known_digests}
+    deleted_digests = {digest(value) for value in deleted_digests}
+    record_deleted = record_deleted if delete else None
     if delete:
         registry.require_delete()
-    plan = plan_cleanup(hub, registry, versions, previous, sleep=sleep, known_digests=known_digests)
+    plan = plan_cleanup(hub, registry, versions, previous, sleep=sleep, known_digests=known_digests,
+        deleted_digests=deleted_digests, record_deleted=record_deleted)
     for tag in plan.tags:
         emit(('Delete tag: ' if delete else 'Would delete tag: ') + tag)
     for item in plan.order:
@@ -414,19 +429,61 @@ def cleanup(hub, registry, versions, previous=None, delete=False, sleep=time.sle
                     blocked.add(child)
                     if child in plan.manifests:
                         pending.extend(plan.manifests[child].children)
-        elif status != 404:
-            deleted += 1
+        elif status in (200, 202, 204, 404):
+            # Persist each confirmed deletion/absence before the next API request.
+            # An interrupted run must not lose progress or suppress failed deletes.
+            if record_deleted is not None:
+                record_deleted(item)
+            if status != 404:
+                deleted += 1
+                emit('Deleted manifest: ' + item)
+        else:
+            raise CleanupError(f'Unexpected manifest deletion response (HTTP {status})')
     verify_current(registry, versions, sleep=sleep)
     emit(f'Cleanup complete: {deleted_tags} tags and {deleted} manifests deleted; {retained} referenced/protected manifests kept')
     return {'tags': deleted_tags, 'manifests': deleted, 'retained': retained}
 
 
-def read_known_digests(path, image):
+def read_digest_inventory(path, image, label):
     value = json.loads(path.read_text(encoding='utf-8'))
     if (not isinstance(value, dict) or value.get('schema_version') != 1
             or value.get('image') != image or not isinstance(value.get('digests'), list)):
-        raise CleanupError('Historical digest inventory does not match this repository')
+        raise CleanupError(label + ' does not match this repository')
     return {digest(item) for item in value['digests']}
+
+
+def read_known_digests(path, image):
+    return read_digest_inventory(path, image, 'Historical digest inventory')
+
+
+class DeletionLedger:
+    def __init__(self, path, image):
+        image_parts(image)
+        self.path, self.image = Path(path), image
+        try:
+            self.digests = read_digest_inventory(self.path, image, 'Deleted digest inventory')
+        except FileNotFoundError:
+            self.digests = set()
+
+    def record(self, value):
+        self.merge((value,))
+
+    def merge(self, values):
+        combined = self.digests | {digest(value) for value in values}
+        if combined == self.digests:
+            return
+        value = {'schema_version': 1, 'image': self.image, 'digests': sorted(combined)}
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=self.path.parent,
+                    prefix=self.path.name + '.', suffix='.tmp', delete=False) as output:
+                temporary = Path(output.name)
+                output.write(json.dumps(value, indent=2) + '\n')
+            temporary.replace(self.path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        self.digests = combined
 
 
 def main(argv=None):
@@ -435,9 +492,17 @@ def main(argv=None):
     parser.add_argument('--versions', type=Path, default=Path('versions.json'))
     parser.add_argument('--previous-versions', type=Path)
     parser.add_argument('--known-digests', type=Path, help='Additional recorded historical manifest digests')
+    parser.add_argument('--deleted', type=Path, default=Path('deleted.json'), help='Persistent deletion ledger')
+    parser.add_argument('--merge-deleted', type=Path, help='Merge another deletion ledger and exit without Docker requests')
     parser.add_argument('--delete', action='store_true', help='Apply cleanup; otherwise only report the plan')
     args = parser.parse_args(argv)
     try:
+        ledger = DeletionLedger(args.deleted, args.image)
+        if args.merge_deleted:
+            if args.delete:
+                raise CleanupError('--merge-deleted cannot be combined with --delete')
+            ledger.merge(read_digest_inventory(args.merge_deleted, args.image, 'Deleted digest inventory'))
+            return
         versions = validate_versions(json.loads(args.versions.read_text(encoding='utf-8')), args.image)
         previous = None
         if args.previous_versions:
@@ -448,11 +513,12 @@ def main(argv=None):
             raise CleanupError('DOCKERHUB_USERNAME and DOCKERHUB_TOKEN must be provided through the environment')
         http = Http()
         cleanup(Hub(args.image, username, secret, http), Registry(args.image, username, secret, http),
-            versions, previous, delete=args.delete, known_digests=known_digests)
+            versions, previous, delete=args.delete, known_digests=known_digests,
+            deleted_digests=ledger.digests, record_deleted=ledger.record)
     except CleanupError as error:
         parser.exit(1, f'Cannot clean Docker Hub: {error}\n')
     except (OSError, ValueError):
-        parser.exit(1, 'Cannot clean Docker Hub: unable to read a valid version inventory\n')
+        parser.exit(1, 'Cannot clean Docker Hub: unable to read or save a valid inventory\n')
 
 
 if __name__ == '__main__':

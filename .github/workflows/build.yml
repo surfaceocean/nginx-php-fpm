@@ -3,10 +3,10 @@ name: Build
 on:
   push:
     branches: [main]
-    paths-ignore: [versions.json, README.md]
+    paths-ignore: [versions.json, deleted.json, README.md]
   pull_request:
     branches: [main]
-    paths-ignore: [versions.json, README.md]
+    paths-ignore: [versions.json, deleted.json, README.md]
   schedule:
       - cron: '23 11 * * *'
         timezone: 'Asia/Shanghai'
@@ -188,7 +188,7 @@ jobs:
         run: |
           git fetch origin main
           git show origin/main:versions.json > previous-versions.json
-          if git diff --quiet "$GITHUB_SHA" origin/main -- . ':!versions.json'; then
+          if git diff --quiet "$GITHUB_SHA" origin/main -- . ':!versions.json' ':!deleted.json'; then
             echo 'current=true' >> "$GITHUB_OUTPUT"
           else
             echo 'current=false' >> "$GITHUB_OUTPUT"
@@ -227,7 +227,7 @@ jobs:
         run: |
           cp versions.json "$RUNNER_TEMP/versions.json"
           git fetch origin main
-          if ! git diff --quiet "$GITHUB_SHA" origin/main -- . ':!versions.json'; then
+          if ! git diff --quiet "$GITHUB_SHA" origin/main -- . ':!versions.json' ':!deleted.json'; then
             echo 'Source changed during publication; leave the manifest as an artifact for this run.'
             exit 0
           fi
@@ -251,13 +251,17 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
-      contents: read
+      contents: write
     steps:
       - name: Check out cleanup scripts and complete inventory history
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          persist-credentials: false
+
+      - name: Read latest deletion ledger
+        run: |
+          git fetch origin main
+          git show origin/main:deleted.json > deleted.json
 
       - name: Download published and previous version inventories
         uses: actions/download-artifact@v8
@@ -271,6 +275,7 @@ jobs:
             --output published/historical-digests.json
 
       - name: Remove temporary tags and known unreferenced images
+        id: prune
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -278,4 +283,35 @@ jobs:
           python3 scripts/cleanup-dockerhub.py --image "$IMAGE" \
             --versions published/versions.json \
             --previous-versions published/previous-versions.json \
-            --known-digests published/historical-digests.json --delete
+            --known-digests published/historical-digests.json \
+            --deleted deleted.json --delete
+
+      - name: Upload deletion progress
+        if: ${{ !cancelled() && (steps.prune.outcome == 'success' || steps.prune.outcome == 'failure') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: deleted
+          path: deleted.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Commit deletion progress to main
+        if: ${{ !cancelled() && (steps.prune.outcome == 'success' || steps.prune.outcome == 'failure') }}
+        run: |
+          git fetch origin main
+          git show origin/main:deleted.json > "$RUNNER_TEMP/deleted-main.json"
+          python3 scripts/cleanup-dockerhub.py --image "$IMAGE" \
+            --deleted deleted.json --merge-deleted "$RUNNER_TEMP/deleted-main.json"
+          cp deleted.json "$RUNNER_TEMP/deleted.json"
+          git restore -- deleted.json
+          git switch --detach origin/main
+          cp "$RUNNER_TEMP/deleted.json" deleted.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add deleted.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'chore: record deleted Docker manifests [skip ci]'
+          # Preserve partial cleanup progress; never force over a concurrent update.
+          git push origin HEAD:main
