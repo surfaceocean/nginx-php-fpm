@@ -109,6 +109,8 @@ docker run --rm --platform "$platform" --user www-data --entrypoint sh "$image" 
     printf "application writes still work\n" > "$probe"
     rm -- "$probe"
   done
+  [ -w /var/log/nginx/access.log ]
+  [ -w /var/log/nginx/error.log ]
 '
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

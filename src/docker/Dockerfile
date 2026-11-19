@@ -28,6 +28,7 @@ RUN set -eux; \
         curl \
         gettext-base \
         git \
+        gpg \
         imagemagick \
         libbz2-dev \
         libfreetype-dev \
@@ -46,7 +47,6 @@ RUN set -eux; \
         libxml2-dev \
         libzip-dev \
         nano \
-        nginx \
         procps \
         psmisc \
         sqlite3 \
@@ -55,6 +55,27 @@ RUN set -eux; \
         unzip \
         zip \
         zlib1g-dev; \
+    nginx_keyring=/usr/share/keyrings/nginx-archive-keyring.gpg; \
+    nginx_key_dir="$(mktemp -d)"; \
+    curl -fsSL https://nginx.org/keys/nginx_signing.key -o "$nginx_key_dir/nginx_signing.key"; \
+    gpg --batch --homedir "$nginx_key_dir" --import "$nginx_key_dir/nginx_signing.key"; \
+    gpg --batch --homedir "$nginx_key_dir" --export \
+        573BFD6B3D8FBC641079A6ABABF5BD827BD9BF62 \
+        8540A6F18833A80E9C1653A42FD21310B49F6B46 \
+        9E9BE90EACBCDE69FE9B204CBCDCD8A38D88A2B3 > "$nginx_keyring"; \
+    test -s "$nginx_keyring"; \
+    chmod 0644 "$nginx_keyring"; \
+    rm -rf "$nginx_key_dir"; \
+    . /etc/os-release; \
+    printf 'deb [arch=%s signed-by=%s] https://nginx.org/packages/mainline/debian %s nginx\n' \
+        "$(dpkg --print-architecture)" "$nginx_keyring" "$VERSION_CODENAME" \
+        > /etc/apt/sources.list.d/nginx.list; \
+    printf 'Package: nginx\nPin: origin nginx.org\nPin-Priority: 900\n' \
+        > /etc/apt/preferences.d/99nginx; \
+    apt-get -o APT::Update::Error-Mode=any update; \
+    usermod -u "${USER_ID}" "${USER_NAME}"; \
+    groupmod -g "${GROUP_ID}" "${GROUP_NAME}"; \
+    apt-get install -y --no-install-recommends nginx; \
     curl -fsSL "https://deb.nodesource.com/setup_${NODE_VERSION}" -o /tmp/nodesource_setup.sh; \
     bash /tmp/nodesource_setup.sh; \
     apt-get install -y --no-install-recommends nodejs; \
@@ -132,14 +153,12 @@ RUN rm -f /etc/nginx/conf.d/default.conf \
 COPY src/nginx.conf /etc/nginx/nginx.conf
 COPY src/nginx-site.conf.template /etc/nginx/templates/nginx-site.conf.template
 
-RUN usermod -u ${USER_ID} ${USER_NAME} && \
-    groupmod -g ${GROUP_ID} ${GROUP_NAME}
-
 RUN set -eux; \
     mkdir -p /var/log/supervisor /var/cache/nginx \
         /var/lib/nginx /var/run/supervisor; \
     chown -R "${USER_NAME}:${GROUP_NAME}" \
         "${WORKDIR}" /var/cache/nginx /var/lib/nginx; \
+    chown "${USER_NAME}:adm" /var/log/nginx/access.log /var/log/nginx/error.log; \
     chown root:root /var/log \
         /etc/nginx/conf.d /var/run/supervisor /tmp; \
     chmod 755 /var/log \

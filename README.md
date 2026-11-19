@@ -24,7 +24,8 @@ Supported PHP series are defined only in [`php-versions.json`](php-versions.json
 
 ## Included software
 
-- Nginx, PHP-FPM, ImageMagick, Supervisord, Cron, Composer and PIE.
+- Nginx from the [official mainline APT repository for Debian](https://nginx.org/en/linux_packages.html#Debian). Each fresh build installs the latest available mainline package.
+- PHP-FPM, ImageMagick, Supervisord, Cron, Composer and PIE.
 - Node.js and its bundled npm from the [NodeSource LTS channel](https://github.com/nodesource/distributions/blob/master/scripts/deb/setup_lts.x). Each fresh build follows the LTS major version selected by NodeSource; actual installed versions are recorded in `versions.json`.
 - Administration tools: `sudo` and `apt-utils`.
 - PHP extensions: `mysqli`, `mysqlnd`, `pdo_mysql`, `pdo_pgsql`, `apcu`, `sysvsem`, `gmp`, `imagick`, `bz2`, `redis`, `rdkafka`, `memcached`, `zip`, `mbstring`, `exif`, `pcntl`, `bcmath`, `gd` (FreeType, JPEG, PNG and WebP), `intl` and OPcache, alongside the extensions provided by the official PHP image.
