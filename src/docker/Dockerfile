@@ -28,7 +28,7 @@ RUN set -eux; \
         curl \
         gettext-base \
         git \
-        gpg \
+        gnupg \
         imagemagick \
         libbz2-dev \
         libfreetype-dev \
