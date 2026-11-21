@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "image": "docker.io/surfaceocean/nginx-php-fpm",
-  "generated_at": "2026-11-20T16:28:08Z",
+  "generated_at": "2026-11-21T17:52:43Z",
   "source": {
     "repository": "surfaceocean/nginx-php-fpm",
-    "commit": "7f100ec1bef1e9019a0e296b55431ac81994aa91",
-    "run_id": "44772832123",
+    "commit": "f7b3d32fb7d949677fb2eab381308b210bd4e87f",
+    "run_id": "44931952397",
     "run_attempt": "1"
   },
   "releases": {
@@ -17,7 +17,7 @@
         "docker.io/surfaceocean/nginx-php-fpm:php8.4",
         "docker.io/surfaceocean/nginx-php-fpm:8.4.28"
       ],
-      "digest": "sha256:f05b2bbeea3918fa989b238b617e4968f136a277935ddd2d053405d1e6c7fd0d",
+      "digest": "sha256:56dcd3a928c369c2224b92207f05c4e68804100813f0171de5ed507f57c41682",
       "platforms": {
         "linux/amd64": {
           "php": "8.4.28",
@@ -94,7 +94,7 @@
           },
           "native_packages": {
             "libbz2-dev": "1.0.8-6",
-            "libfreetype-dev": "2.13.3+dfsg-1+deb13u1",
+            "libfreetype-dev": "2.13.3+dfsg-1+deb13u2",
             "libgmp-dev": "2:6.3.0+dfsg-3",
             "libicu-dev": "76.1-4",
             "libjpeg62-turbo-dev": "1:2.1.5-4",
@@ -110,7 +110,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:2b19c59c8383381b58fe2ecdbdbdce19922b62881e3fe33a4b50446acf908811"
+          "digest": "sha256:d2a247bed4fb2febf5a93ba362671dc94629e663104f6a7ddf2af5af3e5f85db"
         },
         "linux/arm64": {
           "php": "8.4.28",
@@ -187,7 +187,7 @@
           },
           "native_packages": {
             "libbz2-dev": "1.0.8-6",
-            "libfreetype-dev": "2.13.3+dfsg-1+deb13u1",
+            "libfreetype-dev": "2.13.3+dfsg-1+deb13u2",
             "libgmp-dev": "2:6.3.0+dfsg-3",
             "libicu-dev": "76.1-4",
             "libjpeg62-turbo-dev": "1:2.1.5-4",
@@ -203,7 +203,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:45e80bce260ce19dcd1e542e10e3203f3a1e17e9f982549814803211e09a8bd0"
+          "digest": "sha256:aad99fa8a6bf8d364fc2111ee6fc2ef00f216948b91436dd9ed8ce6039bbaed5"
         }
       }
     },
@@ -216,7 +216,7 @@
         "docker.io/surfaceocean/nginx-php-fpm:8.5.13",
         "docker.io/surfaceocean/nginx-php-fpm:latest"
       ],
-      "digest": "sha256:b002036a752fce619abba96b83f754e256fe88b24460fb262a9ca09f0167b544",
+      "digest": "sha256:9da010ca8c7988097314d6e4a8bd52117e50f58f9d9b0eb862a4a68258ddbcaa",
       "platforms": {
         "linux/amd64": {
           "php": "8.5.13",
@@ -295,7 +295,7 @@
           },
           "native_packages": {
             "libbz2-dev": "1.0.8-6",
-            "libfreetype-dev": "2.13.3+dfsg-1+deb13u1",
+            "libfreetype-dev": "2.13.3+dfsg-1+deb13u2",
             "libgmp-dev": "2:6.3.0+dfsg-3",
             "libicu-dev": "76.1-4",
             "libjpeg62-turbo-dev": "1:2.1.5-4",
@@ -311,7 +311,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:5f3d320650f2d483950015d03e0d249e08d5d1b32a3de317d690b38ba7478929"
+          "digest": "sha256:bd9f076f72d4857ad74c88268b7465c6969ed30a03345e71c677e0fe5a217aa4"
         },
         "linux/arm64": {
           "php": "8.5.13",
@@ -390,7 +390,7 @@
           },
           "native_packages": {
             "libbz2-dev": "1.0.8-6",
-            "libfreetype-dev": "2.13.3+dfsg-1+deb13u1",
+            "libfreetype-dev": "2.13.3+dfsg-1+deb13u2",
             "libgmp-dev": "2:6.3.0+dfsg-3",
             "libicu-dev": "76.1-4",
             "libjpeg62-turbo-dev": "1:2.1.5-4",
@@ -406,7 +406,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:4468af00ce3001f99aebcaa9328e13f7f3878e5e1fc935a84e6ecded314597bf"
+          "digest": "sha256:6f3f01348790fdafda593aa976d0926502686805a4949ed240e92741f9810738"
         }
       }
     }
