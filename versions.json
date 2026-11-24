@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "image": "docker.io/surfaceocean/nginx-php-fpm",
-  "generated_at": "2026-11-24T03:26:34Z",
+  "generated_at": "2026-11-24T03:41:37Z",
   "source": {
     "repository": "surfaceocean/nginx-php-fpm",
-    "commit": "acf51861766fe649289fdb4462736c3ef7bc37f1",
-    "run_id": "45318938187",
+    "commit": "d2d22a95a809cd1568f9245e6e10d4bbea12cabb",
+    "run_id": "45320666364",
     "run_attempt": "1"
   },
   "releases": {
@@ -17,7 +17,7 @@
         "docker.io/surfaceocean/nginx-php-fpm:php8.4",
         "docker.io/surfaceocean/nginx-php-fpm:8.4.28"
       ],
-      "digest": "sha256:f42ea57e377834478769f093c114f3d04464e1125a3d4ae73c330d437f914472",
+      "digest": "sha256:683318a8e66511f361cd257c73bf533569ec7f009c0e9d4a0c6718239dda13ba",
       "platforms": {
         "linux/amd64": {
           "php": "8.4.28",
@@ -110,7 +110,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:0f618380334c2f15671eb900c02aae3723fe67dce4d70b34fcf1e2107f6372b2"
+          "digest": "sha256:fb2691233b36b593d34170974cc2d21d6facf9f1ba28832187ee6bd501532991"
         },
         "linux/arm64": {
           "php": "8.4.28",
@@ -203,7 +203,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:30a0b5b9d83d4d09df41dd687957b6f7e217e0a2c38b712a7e02a35dcf5490a7"
+          "digest": "sha256:a511d72f51970655cc12a447746a7885aabda4c4bac73354524ca9180bc7f7ed"
         }
       }
     },
@@ -216,7 +216,7 @@
         "docker.io/surfaceocean/nginx-php-fpm:8.5.13",
         "docker.io/surfaceocean/nginx-php-fpm:latest"
       ],
-      "digest": "sha256:3e4f925e0ba35422ee72ca4415e3fbf67f899561f4e83d65ac88157fe850cc3f",
+      "digest": "sha256:751e2fe4e01f586ffc43cbd3148d88b9c20c02efb7ba1ecbf1c51849bcba685a",
       "platforms": {
         "linux/amd64": {
           "php": "8.5.13",
@@ -311,7 +311,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:c55585646d687cf4f56a47d7d0eb327b395db49bafe1b3b8b24fe377b292e753"
+          "digest": "sha256:c78aa68173d26b22ea8b623aeb224f00ef1a37e3459c56792755a9213130bd08"
         },
         "linux/arm64": {
           "php": "8.5.13",
@@ -406,7 +406,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:626083de306f2e5183f4073b99a5907e57e46c81bdb2660ec02a7c382a588b7e"
+          "digest": "sha256:7e9431f3b1f5d7f981626471153cfb368258a8fca160c70897acdc3df28d6362"
         }
       }
     }
