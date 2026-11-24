@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "image": "docker.io/surfaceocean/nginx-php-fpm",
-  "generated_at": "2026-11-23T15:28:33Z",
+  "generated_at": "2026-11-24T03:26:34Z",
   "source": {
     "repository": "surfaceocean/nginx-php-fpm",
-    "commit": "9020498db93138f49b041891102127ae325ffee8",
-    "run_id": "45204607382",
+    "commit": "acf51861766fe649289fdb4462736c3ef7bc37f1",
+    "run_id": "45318938187",
     "run_attempt": "1"
   },
   "releases": {
@@ -17,7 +17,7 @@
         "docker.io/surfaceocean/nginx-php-fpm:php8.4",
         "docker.io/surfaceocean/nginx-php-fpm:8.4.28"
       ],
-      "digest": "sha256:d2cbcf35d63a530d7b3bc727567a4858116cee282854ce28f746eebbd755a1eb",
+      "digest": "sha256:f42ea57e377834478769f093c114f3d04464e1125a3d4ae73c330d437f914472",
       "platforms": {
         "linux/amd64": {
           "php": "8.4.28",
@@ -76,7 +76,7 @@
           },
           "tools": {
             "composer": "2.11.2",
-            "nginx": "1.31.9",
+            "nginx": "1.31.10",
             "node": "26.13.1",
             "npm": "11.20.0"
           },
@@ -110,7 +110,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:574cc71903a32976c5f749b33ae6af12943c7b7d07fdd3acc5595fd7fb6f8e4c"
+          "digest": "sha256:0f618380334c2f15671eb900c02aae3723fe67dce4d70b34fcf1e2107f6372b2"
         },
         "linux/arm64": {
           "php": "8.4.28",
@@ -169,7 +169,7 @@
           },
           "tools": {
             "composer": "2.11.2",
-            "nginx": "1.31.9",
+            "nginx": "1.31.10",
             "node": "26.13.1",
             "npm": "11.20.0"
           },
@@ -203,7 +203,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:4630734dd6f5779373976053b605fa0ca8574e072ea6ef2c4604cfc9a74b7689"
+          "digest": "sha256:30a0b5b9d83d4d09df41dd687957b6f7e217e0a2c38b712a7e02a35dcf5490a7"
         }
       }
     },
@@ -216,7 +216,7 @@
         "docker.io/surfaceocean/nginx-php-fpm:8.5.13",
         "docker.io/surfaceocean/nginx-php-fpm:latest"
       ],
-      "digest": "sha256:bfc0b83e0246c60265c855aa49842d59cbdaca98b4abab2c3b2454daf7839c26",
+      "digest": "sha256:3e4f925e0ba35422ee72ca4415e3fbf67f899561f4e83d65ac88157fe850cc3f",
       "platforms": {
         "linux/amd64": {
           "php": "8.5.13",
@@ -277,7 +277,7 @@
           },
           "tools": {
             "composer": "2.11.2",
-            "nginx": "1.31.9",
+            "nginx": "1.31.10",
             "node": "26.13.1",
             "npm": "11.20.0"
           },
@@ -311,7 +311,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:becb8776c65f49358c5d9baf563188dde5a4dcc2eb313f6dc48d1bded898be04"
+          "digest": "sha256:c55585646d687cf4f56a47d7d0eb327b395db49bafe1b3b8b24fe377b292e753"
         },
         "linux/arm64": {
           "php": "8.5.13",
@@ -372,7 +372,7 @@
           },
           "tools": {
             "composer": "2.11.2",
-            "nginx": "1.31.9",
+            "nginx": "1.31.10",
             "node": "26.13.1",
             "npm": "11.20.0"
           },
@@ -406,7 +406,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:2f203f3268d2d1c58b5f28881e73a32dd6c666ebac9fd27b158013f78ba171a1"
+          "digest": "sha256:626083de306f2e5183f4073b99a5907e57e46c81bdb2660ec02a7c382a588b7e"
         }
       }
     }
