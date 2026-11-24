@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "image": "docker.io/surfaceocean/nginx-php-fpm",
-  "generated_at": "2026-11-24T03:41:37Z",
+  "generated_at": "2026-11-24T15:28:02Z",
   "source": {
     "repository": "surfaceocean/nginx-php-fpm",
-    "commit": "d2d22a95a809cd1568f9245e6e10d4bbea12cabb",
-    "run_id": "45320666364",
+    "commit": "2bc604498a59fca2bf3d9a0fc2df931a39e2857c",
+    "run_id": "45424872838",
     "run_attempt": "1"
   },
   "releases": {
@@ -17,7 +17,7 @@
         "docker.io/surfaceocean/nginx-php-fpm:php8.4",
         "docker.io/surfaceocean/nginx-php-fpm:8.4.28"
       ],
-      "digest": "sha256:683318a8e66511f361cd257c73bf533569ec7f009c0e9d4a0c6718239dda13ba",
+      "digest": "sha256:8a6ffe040151dcb3cba1c9e147e57abc33623b7b179d1c82b1d68945cecb0b10",
       "platforms": {
         "linux/amd64": {
           "php": "8.4.28",
@@ -88,7 +88,7 @@
             "imagemagick": "ImageMagick 7.1.1-43 Q16 x86_64 22550 https://imagemagick.org",
             "libxml": "2.9.14",
             "libzip": "1.11.3",
-            "openssl": "OpenSSL 3.5.7 9 Jun 2026",
+            "openssl": "OpenSSL 3.5.9 29 Sep 2026",
             "pcre": "10.44 2024-06-07",
             "zlib": "1.3.1"
           },
@@ -110,7 +110,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:fb2691233b36b593d34170974cc2d21d6facf9f1ba28832187ee6bd501532991"
+          "digest": "sha256:d5a77a11ddb5916d9981cd99e33c6330625e6e64e60beb530bb87309c24d407d"
         },
         "linux/arm64": {
           "php": "8.4.28",
@@ -181,7 +181,7 @@
             "imagemagick": "ImageMagick 7.1.1-43 Q16 aarch64 22550 https://imagemagick.org",
             "libxml": "2.9.14",
             "libzip": "1.11.3",
-            "openssl": "OpenSSL 3.5.7 9 Jun 2026",
+            "openssl": "OpenSSL 3.5.9 29 Sep 2026",
             "pcre": "10.44 2024-06-07",
             "zlib": "1.3.1"
           },
@@ -203,7 +203,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:a511d72f51970655cc12a447746a7885aabda4c4bac73354524ca9180bc7f7ed"
+          "digest": "sha256:76579b1fa35ad4495c5974dd4822bd0107583f5c73e511a8848b54f35e27a8f2"
         }
       }
     },
@@ -216,7 +216,7 @@
         "docker.io/surfaceocean/nginx-php-fpm:8.5.13",
         "docker.io/surfaceocean/nginx-php-fpm:latest"
       ],
-      "digest": "sha256:751e2fe4e01f586ffc43cbd3148d88b9c20c02efb7ba1ecbf1c51849bcba685a",
+      "digest": "sha256:b179231706d9e242bd06c506ac88d4c37c8f7aecb5b6e989d5dc7d57f211014b",
       "platforms": {
         "linux/amd64": {
           "php": "8.5.13",
@@ -289,7 +289,7 @@
             "imagemagick": "ImageMagick 7.1.1-43 Q16 x86_64 22550 https://imagemagick.org",
             "libxml": "2.9.14",
             "libzip": "1.11.3",
-            "openssl": "OpenSSL 3.5.7 9 Jun 2026",
+            "openssl": "OpenSSL 3.5.9 29 Sep 2026",
             "pcre": "10.44 2024-06-07",
             "zlib": "1.3.1"
           },
@@ -311,7 +311,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:c78aa68173d26b22ea8b623aeb224f00ef1a37e3459c56792755a9213130bd08"
+          "digest": "sha256:29a551d1d0739712182cbff1854a179036d41490876054a1421eb9feff18d3c1"
         },
         "linux/arm64": {
           "php": "8.5.13",
@@ -384,7 +384,7 @@
             "imagemagick": "ImageMagick 7.1.1-43 Q16 aarch64 22550 https://imagemagick.org",
             "libxml": "2.9.14",
             "libzip": "1.11.3",
-            "openssl": "OpenSSL 3.5.7 9 Jun 2026",
+            "openssl": "OpenSSL 3.5.9 29 Sep 2026",
             "pcre": "10.44 2024-06-07",
             "zlib": "1.3.1"
           },
@@ -406,7 +406,7 @@
             "libzip-dev": "1.11.3-2",
             "zlib1g-dev": "1:1.3.dfsg+really1.3.1-1+deb13u1"
           },
-          "digest": "sha256:7e9431f3b1f5d7f981626471153cfb368258a8fca160c70897acdc3df28d6362"
+          "digest": "sha256:370b1b823b74517a6398d61fbe8826331c06a18fafa9dd35ac62a8daac69abf1"
         }
       }
     }
